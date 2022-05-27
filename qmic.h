@@ -2,10 +2,24 @@
 #define __QMIC_H__
 
 #include <stdbool.h>
+#include <err.h>
 
 #include "list.h"
 
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
+
+#define QMI_STRUCT_NEST_MAX 32
+
+/* Allocate and zero a block of memory; and exit if it fails */
+#define memalloc(size) ({						\
+		void *__p = malloc(size);				\
+									\
+		if (!__p)						\
+			errx(1, "malloc() failed in %s(), line %d\n",	\
+				__func__, __LINE__);			\
+		memset(__p, 0, size);					\
+		__p;							\
+	 })
 
 enum symbol_type {
 	TYPE_U8,
@@ -55,15 +69,21 @@ struct qmi_message {
 	struct list_head members;
 };
 
+struct qmi_struct;
+
 struct qmi_struct_member {
 	const char *name;
 	int type;
+	bool is_ptr;
+	/* This member might be a struct */
+	struct qmi_struct* struct_ch;
 
 	struct list_head node;
 };
 
 struct qmi_struct {
 	const char *name;
+	bool is_ptr;
 
 	struct list_head node;
 

@@ -16,17 +16,6 @@
 #include "list.h"
 #include "qmic.h"
 
-/* Allocate and zero a block of memory; and exit if it fails */
-#define memalloc(size) ({						\
-		void *__p = malloc(size);				\
-									\
-		if (!__p)						\
-			errx(1, "malloc() failed in %s(), line %d\n",	\
-				__func__, __LINE__);			\
-		memset(__p, 0, size);					\
-		__p;							\
-	 })
-
 #define TOKEN_BUF_SIZE		128	/* TOKEN_BUF_MIN or more */
 #define TOKEN_BUF_MIN		24	/* Enough for a 64-bit octal number */
 
@@ -369,6 +358,14 @@ static void token_init(void)
 	curr_token = yylex();
 }
 
+static void print_token(struct token *tok, bool accept) {
+	printf("T(%d:%s%s): ", tok->id, token_name(tok->id), accept ? ":Y" : "");
+	if (tok->str)
+		printf("%s\n", tok->str);
+	else
+		printf("%c\n", tok->id);
+}
+
 static bool token_accept(enum token_id token_id, struct token *tok)
 {
 	if (curr_token.id != token_id)
@@ -389,14 +386,17 @@ static void token_expect(enum token_id token_id, struct token *tok)
 {
 	const char *want;
 
+	printf("want: %c\n", token_id < 128 ? token_id : token_name(token_id)[0]);
+
 	if (token_accept(token_id, tok))
 		return;
 
 	want = token_name(token_id);
-	if (want)
+	if (want) {
 		yyerror("expected %s", want);
-	else
-		yyerror("expected '%c'", token_id);
+	} else {
+		yyerror("expected '%c' not '%c'", token_id, curr_token.id);
+	}
 }
 
 static void qmi_package_parse(void)
@@ -520,22 +520,44 @@ static void qmi_message_parse(enum message_type message_type)
 	list_add(&qmi_messages, &qm->node);
 }
 
-static void qmi_struct_parse(void)
+static struct qmi_struct *qmi_struct_parse(int nested)
 {
 	struct qmi_struct_member *qsm;
+	struct qmi_struct *qsc = NULL;
 	struct token struct_id_tok;
 	struct qmi_struct *qs;
 	struct token type_tok;
 	struct token id_tok;
-
-	token_expect(TOK_ID, &struct_id_tok);
-	token_expect('{', NULL);
+	bool struct_last_member = false;
 
 	qs = memalloc(sizeof(struct qmi_struct));
-	qs->name = struct_id_tok.str;
+
+	if (!nested) {
+		token_expect(TOK_ID, &struct_id_tok);
+		qs->name = struct_id_tok.str;
+	}
+
+	token_expect('{', NULL);
+
 	list_init(&qs->members);
 
-	while (token_accept(TOK_TYPE, &type_tok)) {
+	while (token_accept(TOK_TYPE, &type_tok) || token_accept(TOK_STRUCT, &type_tok)) {
+		bool is_ptr = false;
+		qsc = NULL;
+		if (!strcmp(type_tok.str, "struct")) {
+			if (nested == QMI_STRUCT_NEST_MAX)
+				yyerror("Can't nest more than 32 levels deep");
+			qsc = qmi_struct_parse(nested + 1);
+			printf("exit nested %s\n", qsc->name);
+			if (token_accept('}', NULL) && qsc->name) {
+				struct_last_member = true;
+				break;
+			}
+		}
+
+		if (token_accept('*', NULL))
+			is_ptr = true;
+
 		token_expect(TOK_ID, &id_tok);
 		token_expect(';', NULL);
 
@@ -547,18 +569,52 @@ static void qmi_struct_parse(void)
 		qsm = memalloc(sizeof(struct qmi_struct_member));
 		qsm->name = id_tok.str;
 		qsm->type = type_tok.num;
+		qsm->is_ptr = is_ptr;
+		if (qsc && !qsc->name) {
+			qsc->name = id_tok.str;
+			qsc->is_ptr = is_ptr;
+			printf("nested struct member: %s\n", qsc->name);
+			qsm->struct_ch = qsc;
+		}
 		if (type_tok.str)
 			free(type_tok.str);
 
 		list_add(&qs->members, &qsm->node);
 	}
 
-	token_expect('}', NULL);
+	if (struct_last_member) {
+		qsm = memalloc(sizeof(struct qmi_struct_member));
+		qsm->name = qsc->name;
+		qsm->type = TOK_STRUCT;
+		qsm->struct_ch = qsc;
+		// unneeded
+		qsm->is_ptr = qsc->is_ptr;
+		list_add(&qs->members, &qsm->node);
+	}
+
+	if (!struct_last_member)
+		token_expect('}', NULL);
+	
+	if (nested) {
+		if (token_accept('*', NULL))
+			qs->is_ptr = true;
+		printf("%d: '%c': (%s) (%s), is_ptr:%d\n", nested, curr_token.id, curr_token.str, token_name(curr_token.id), qs->is_ptr);
+		token_expect(TOK_ID, &struct_id_tok);
+		qs->name = struct_id_tok.str;
+	}
+	printf("%d: %s\n", nested, qs->name);
 	token_expect(';', NULL);
 
-	list_add(&qmi_structs, &qs->node);
+	if (!nested) {
+		list_add(&qmi_structs, &qs->node);
+		symbol_add(qs->name, TOK_TYPE, TYPE_STRUCT, qs);
+	}
 
-	symbol_add(qs->name, TOK_TYPE, TYPE_STRUCT, qs);
+	printf("Finished (%d) %s\n", nested, qs->name);
+	if (nested)
+		return qs;
+	
+	return NULL;
 }
 
 void qmi_parse(void)
@@ -594,7 +650,7 @@ void qmi_parse(void)
 		} else if (token_accept(TOK_CONST, NULL)) {
 			qmi_const_parse();
 		} else if (token_accept(TOK_STRUCT, NULL)) {
-			qmi_struct_parse();
+			qmi_struct_parse(0);
 		} else if (token_accept(TOK_MESSAGE, &tok)) {
 			qmi_message_parse(tok.num);
 			free(tok.str);
