@@ -150,11 +150,13 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 {
 	struct qmi_struct_member *curr, *prev = NULL;
 	const struct symbol_type_table *sym;
-	int i, target_len, old_target_len = strlen(target);
-	char iter[QMI_STRUCT_NEST_MAX];
-	char temp;
+	int i, old_target_len = strlen(target);
+	char iter[QMI_STRUCT_NEST_MAX] = {0};
 
 	PLOGD(strlen(indent) > 1 ? indent : "", "struct %s (%s)\n", qs->type, qs->name);
+
+	for(i = 0; i < strlen(indent); i++)
+		iter[i] = 'i';
 
 	list_for_each_entry(curr, &qs->members, node) {
 		if (curr->type > SYMBOL_TYPE_MAX) {
@@ -168,11 +170,6 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 
 		if (curr->is_ptr && qmi_struct_assert_member_is_len(prev, curr)) {
 			strcpy(target + strlen(target), curr->name);
-			target[strlen(target)] = '[';
-			for(i = 0; i < strlen(indent); i++)
-				iter[i] = 'i';
-			strncpy(target + strlen(target), iter, i);
-			strncpy(target + strlen(target), "]", 2);
 
 			PLOGD(indent, "	new target: '%s'\n", target);
 
@@ -182,20 +179,24 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 				fprintf(fp, "sizeof(struct %1$s);\n",
 					curr->struct_ch->type);
 			} else {
-				fprintf(fp, "%1$d\n", sym->type_sz);
+				fprintf(fp, "%1$d;\n", sym->type_sz);
 			}
 			fprintf(fp, "%1$s%2$s = malloc(%3$s_sz *",
 				    indent, target, curr->name);
-			target_len = strlen(target);
-			temp = target[target_len - 2 -i];
-			target[target_len - 2 -i] = '\0';
+			// target_len = strlen(target);
+			// temp = target[target_len - 2 -i];
+			// target[target_len - 2 -i] = '\0';
 
 			fprintf(fp, " %1$s_n);\n", target);
-
-			target[target_len - 2 -i] = temp;
-
 			fprintf(fp, "%1$sfor(size_t %2$s = 0; %2$s < %3$s_n; %2$s++) {\n",
 				    indent, iter, target);
+
+			//target[target_len - 2 -i] = temp;
+
+			target[strlen(target)] = '[';
+			strncpy(target + strlen(target), iter, i);
+			strncpy(target + strlen(target), "]", 2);
+
 			indent[strlen(indent)] = '\t';
 
 			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
@@ -203,9 +204,9 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 				qmi_struct_emit_deserialise(fp, package, target,
 					indent, curr->struct_ch);
 			} else {
-				fprintf(fp, "%1$s%2$s = *(%3$s*)(ptr); ptr += %4$d;\n",
-				indent, target, sym->type_name, sym->type_sz);
-				PLOGD(indent, "%s = *(%s*)(ptr); ptr += %d;\n",
+				fprintf(fp, "%1$s%2$s = get_next(%3$s, %4$d);\n",
+					indent, target, sym->type_name, sym->type_sz);
+				PLOGD(indent, "%s = get_next(%s, %d);\n",
 					target, sym->type_name, sym->type_sz);
 			}
 
@@ -224,7 +225,7 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 					indent, curr->struct_ch);
 				memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
 			} else {
-				fprintf(fp, "%1$s%2$s%3$s = *(%4$s*)(ptr); ptr += %5$d;\n",
+				fprintf(fp, "%1$s%2$s%3$s = get_next(%4$s, %5$d);\n",
 					indent, target, curr->name, sym->type_name, sym->type_sz);
 			}
 		}
@@ -279,10 +280,10 @@ static void qmi_struct_emit_accessors(FILE *fp,
 		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
 		    "{\n"
 		    "	size_t len = 0, buf_sz, amt;\n"
-		    "	void *ptr;\n"
+		    "	uint8_t *ptr;\n"
 		    "	struct %1$s_%4$s *out;\n"
 		    "\n"
-		    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
+		    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &buf_sz);\n"
 		    "	if (!ptr)\n"
 		    "		return NULL;\n"
 		    "\n"
@@ -296,8 +297,13 @@ static void qmi_struct_emit_accessors(FILE *fp,
 
 		qmi_struct_emit_deserialise(fp, package, target, indent, qs);
 
-		fprintf(fp, "\n	return out;\n"
-		    "}\n\n");
+		fprintf(fp, "\n"
+			    "	return out;\n\n"
+			    "err_wrong_len:\n"
+			    "	fprintf(stderr, \"%%s: expected at least %%u bytes but got %%u\\n\", __func__, len, buf_sz);\n"
+			    "	free(out);\n"
+			    "	return NULL;\n"
+			    "}\n\n");
 	} else {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
 			    "{\n"
@@ -569,6 +575,12 @@ static void emit_header_file_header(FILE *fp)
 	fprintf(fp, "#include <stdint.h>\n"
 		    "#include <stddef.h>\n"
 		    "#include <stdlib.h>\n\n");
+	fprintf(fp, "#define get_next(_type, _sz) ({ \\\n"
+		    "	void* buf = ptr + len; \\\n"
+		    "	len += _sz; \\\n"
+		    "	if (len > buf_sz) goto err_wrong_len; \\\n"
+		    "	*(_type*)buf; \\\n"
+		    "})\n\n");
 	fprintf(fp, "struct qmi_tlv;\n"
 		    "\n"
 		    "struct qmi_tlv *qmi_tlv_init(unsigned txn, unsigned msg_id, unsigned type);\n"
