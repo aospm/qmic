@@ -30,6 +30,8 @@ enum symbol_type {
 	TYPE_STRUCT
 };
 
+#define SYMBOL_TYPE_MAX TYPE_STRUCT
+
 enum message_type {
 	MESSAGE_REQUEST = 0,
 	MESSAGE_RESPONSE = 2,
@@ -83,6 +85,7 @@ struct qmi_struct_member {
 
 struct qmi_struct {
 	const char *type;
+	const char *name;
 	bool is_ptr;
 
 	struct list_head node;

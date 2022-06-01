@@ -6,17 +6,38 @@
 
 #define QMI_STRUCT_TYPE_NAME_MAX (QMI_STRUCT_NEST_MAX * 16)
 
+struct symbol_type_table {
+	const char* type_name;
+	int type_sz;
+};
+
+static const struct symbol_type_table
+/* +1 because
+ * "warning: array subscript 5 is above array bounds of ‘const struct symbol_type_table[5]’
+ * [-Warray-bounds]"
+ * suspect GCC static analysis issue?
+ */
+symbol_table_lookup[SYMBOL_TYPE_MAX + 1] = {
+	[TYPE_U8] = {"uint8_t", 1},
+	[TYPE_U16] = {"uint16_t", 2},
+	[TYPE_U32] = {"uint32_t", 4},
+	[TYPE_U64] = {"uint64_t", 8},
+	[TYPE_STRING] = {"char *", -1},
+	[TYPE_STRUCT] = {"struct", -1},
+};
+
 static void qmi_struct_members_header(FILE *fp,
 				const char *package,
 				struct qmi_struct *qs,
 				char *indent, char *parent)
 {
 	struct qmi_struct_member *qsm;
+	char *ptr;
 
 	printf("struct %s, indent %ld\n", qs->type, strlen(indent));
 
 	if (indent[0] != '\0')
-		fprintf(fp, "%sstruct %s%s_%s {\n", indent, package, parent, qs->type);
+		fprintf(fp, "%sstruct %s {\n", indent, qs->type);
 	else
 		fprintf(fp, "struct %s_%s {\n", package, qs->type);
 
@@ -30,7 +51,18 @@ static void qmi_struct_members_header(FILE *fp,
 				exit(1);
 			}
 			strcpy(parent + strlen(parent), "_");
-			strcpy(parent + strlen(parent), qs->type);
+			strcpy(parent + strlen(parent), qs->name ? qs->name : qs->type);
+
+			// ew, find a better way to do ALL of this
+			ptr = memalloc(strlen(parent)+ strlen(qsm->struct_ch->name) + 1);
+			qsm->struct_ch->type = ptr;
+			strcpy(ptr, parent);
+			ptr += strlen(parent);
+			*ptr++ = '_';
+			strcpy(ptr, qsm->struct_ch->name);
+			//strcpy(parent, ptr);
+
+			printf("%s: type is struct %s\n", qsm->struct_ch->name, qsm->struct_ch->type);
 
 			qmi_struct_members_header(fp, package,
 					qsm->struct_ch, indent, parent);
@@ -42,7 +74,7 @@ static void qmi_struct_members_header(FILE *fp,
 	}
 	
 	if (indent[0] != '\0') {
-		fprintf(fp, "%s} %s%s;\n", indent, qs->is_ptr ? "*" : "", qs->type);
+		fprintf(fp, "%s} %s%s;\n", indent, qs->is_ptr ? "*" : "", qs->name ?: qs->type);
 		indent[strlen(indent)-1] = '\0';
 	} else {
 		fprintf(fp, "};\n\n");
@@ -52,25 +84,13 @@ static void qmi_struct_members_header(FILE *fp,
 static void qmi_struct_header(FILE *fp, const char *package)
 {
 	struct qmi_struct *qs;
-	char* indent = memalloc(QMI_STRUCT_NEST_MAX + 1);
+	char* indent = memalloc(QMI_STRUCT_NEST_MAX + 2);
 	char* basename = memalloc(QMI_STRUCT_TYPE_NAME_MAX);
+	strcpy(basename, package);
 
 	list_for_each_entry(qs, &qmi_structs, node) {
 		qmi_struct_members_header(fp, package, qs, indent, basename);
 	}
-}
-
-static bool qmi_struct_has_ptr_members(struct qmi_struct *qs)
-{
-	struct qmi_struct_member *qsm;
-	list_for_each_entry(qsm, &qs->members, node) {
-		if (qsm->struct_ch && qmi_struct_has_ptr_members(qsm->struct_ch))
-			return true;
-		if (qsm->is_ptr)
-			return true;
-	}
-
-	return false;
 }
 
 static void qmi_struct_emit_prototype(FILE *fp,
@@ -95,6 +115,148 @@ static void qmi_struct_emit_prototype(FILE *fp,
 	}
 }
 
+static bool qmi_struct_has_ptr_members(struct qmi_struct *qs)
+{
+	struct qmi_struct_member *qsm;
+	list_for_each_entry(qsm, &qs->members, node) {
+		if (qsm->struct_ch && qmi_struct_has_ptr_members(qsm->struct_ch))
+			return true;
+		if (qsm->is_ptr)
+			return true;
+	}
+
+	return false;
+}
+
+/* Ensures that member m1 is either
+ * <m2_name>_n or <m2_name>_num, fails otherwise
+ */
+static bool qmi_struct_assert_member_is_len(struct qmi_struct_member *m1, struct qmi_struct_member *m2)
+{
+	if (!m1) {
+		fprintf(stderr, "ERROR: dynamic array not preceded by length member.\n"
+				"missing 'u8 %1$s_n;' before member '%1$s'\n",
+				m2->name);
+		exit(1);
+	}
+	size_t n = strlen(m1->name);
+	size_t n2 = strlen(m2->name);
+	if(n - n2 != 2 || strncmp(m1->name, m2->name, n2) || strncmp(m1->name + n2, "_n", 2)) {
+		fprintf(stderr, "ERROR: Member before '%1$s' should be '%1$s_n', "
+				"got '%2$s'\n", m2->name, m1->name);
+		exit(1);
+	}
+
+	return true;
+}
+
+#define TARGET_VAR_MAX_LEN 512
+
+#define NLOG(fmt, ...) printf("%s " fmt, indent, ##__VA_ARGS__)
+
+/**
+ * qmi_struct_emit_deserialise() - recursively
+ * 	emit code to deserialise nested structs
+ * 
+ * @fp: output file
+ * @package: name of QMI package
+ * @target: current object we're setting properties on
+ * @indent: nested indent amount
+ * @qs: the struct we're deserialising
+ */
+static void qmi_struct_emit_deserialise(FILE *fp,
+			       const char *package,
+			       char *target,
+			       char *indent,
+			       struct qmi_struct *qs)
+{
+	struct qmi_struct_member *curr, *prev = NULL;
+	const struct symbol_type_table *sym;
+	int i, target_len, old_target_len = strlen(target);
+	char iter[QMI_STRUCT_NEST_MAX] = {{0}};
+	char temp;
+
+	NLOG("struct %s (%s)\n", qs->type, qs->name);
+
+	list_for_each_entry(curr, &qs->members, node) {
+		if (curr->type > SYMBOL_TYPE_MAX) {
+			fprintf(stderr, "ERROR: member '%s' is of unsupported type %d\n",
+					curr->name, curr->type);
+			exit(1);
+		}
+
+		sym = &symbol_table_lookup[curr->type];
+		NLOG("member '%s': %s\n", curr->name, sym->type_name);
+
+		if (curr->is_ptr && qmi_struct_assert_member_is_len(prev, curr)) {
+			strcpy(target + strlen(target), curr->name);
+			target[strlen(target)] = '[';
+			for(i = 0; i < strlen(indent); i++)
+				iter[i] = 'i';
+			strncpy(target + strlen(target), iter, i);
+			strncpy(target + strlen(target), "]", 2);
+
+			NLOG("	new target: '%s'\n", target);
+
+			fprintf(fp, "%1$ssize_t %2$s_sz = ",
+				    indent, curr->name);
+			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
+				fprintf(fp, "sizeof(struct %1$s);\n",
+					curr->struct_ch->type);
+			} else {
+				fprintf(fp, "%1$d\n", sym->type_sz);
+			}
+			fprintf(fp, "%1$s%2$s = malloc(%3$s_sz *",
+				    indent, target, curr->name);
+			target_len = strlen(target);
+			temp = target[target_len - 2 -i];
+			target[target_len - 2 -i] = '\0';
+
+			fprintf(fp, " %1$s_n);\n", target);
+
+			target[target_len - 2 -i] = temp;
+
+			fprintf(fp, "%1$sfor(size_t %2$s = 0; %2$s < %3$s_n; %2$s++) {\n",
+				    indent, iter, target);
+			indent[strlen(indent)] = '\t';
+
+			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
+				target[strlen(target)] = '.';
+				qmi_struct_emit_deserialise(fp, package, target,
+					indent, curr->struct_ch);
+			} else {
+				fprintf(fp, "%1$s%2$s = *(%3$s*)(ptr); ptr += %4$d;\n",
+				indent, target, sym->type_name, sym->type_sz);
+				NLOG("%s = *(%s*)(ptr); ptr += %d;\n",
+					target, sym->type_name, sym->type_sz);
+			}
+
+			indent[strlen(indent)-1] = '\0';
+			fprintf(fp, "%1$s}\n", indent);
+
+			memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
+		} else {
+			/* target is something like "out->cards[0].applications[1]."
+			* or just "out->"
+			*/
+			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
+				strcpy(target + strlen(target), curr->name);
+				target[strlen(target)] = '.';
+				qmi_struct_emit_deserialise(fp, package, target,
+					indent, curr->struct_ch);
+				memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
+			} else {
+				fprintf(fp, "%1$s%2$s%3$s = *(%4$s*)(ptr); ptr += %5$d;\n",
+					indent, target, curr->name, sym->type_name, sym->type_sz);
+			}
+		}
+
+		prev = curr;
+	}
+
+	printf("Leaving %s, target: %s\n", qs->name ? qs->name : qs->type, target);
+}
+
 static void qmi_struct_emit_accessors(FILE *fp,
 			       const char *package,
 			       const char *message,
@@ -103,6 +265,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 			       unsigned array_size,
 			       struct qmi_struct *qs)
 {
+	char *indent, *target;
 	if (array_size) {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val, size_t count)\n"
 			    "{\n"
@@ -130,25 +293,33 @@ static void qmi_struct_emit_accessors(FILE *fp,
 	} else if (qmi_struct_has_ptr_members(qs)) {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
 			    "{\n"
+			    "	/* This is broken for now (doesn't serialise ptr members) */\n"
 			    "	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, val, sizeof(struct %1$s_%4$s));\n"
 			    "}\n\n",
 			    package, message, member, qs->type, member_id);
 
 		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
-			    "{\n"
-			    "	size_t len;\n"
-			    "	void *ptr;\n"
-			    "\n"
-			    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
-			    "	if (!ptr)\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	if (len != sizeof(struct %1$s_%4$s))\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	return ptr;\n"
-			    "}\n\n",
-			    package, message, member, qs->type, member_id);
+		    "{\n"
+		    "	size_t len = 0, buf_sz, amt;\n"
+		    "	void *ptr;\n"
+		    "	struct %1$s_%4$s *out;\n"
+		    "\n"
+		    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
+		    "	if (!ptr)\n"
+		    "		return NULL;\n"
+		    "\n"
+		    "	out = malloc(sizeof(struct %1$s_%4$s));\n",
+		package, message, member, qs->type, member_id);
+
+		indent = memalloc(QMI_STRUCT_NEST_MAX + 2);
+		indent[0] = '\t';
+		target = memalloc(TARGET_VAR_MAX_LEN);
+		strncpy(target, "out->", 6);
+
+		qmi_struct_emit_deserialise(fp, package, target, indent, qs);
+
+		fprintf(fp, "\n	return out;\n"
+		    "}\n\n");
 	} else {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
 			    "{\n"
@@ -418,6 +589,7 @@ static void qmi_message_header(FILE *fp, const char *package)
 static void emit_header_file_header(FILE *fp)
 {
 	fprintf(fp, "#include <stdint.h>\n"
+		    "#include <stddef.h>\n"
 		    "#include <stdlib.h>\n\n");
 	fprintf(fp, "struct qmi_tlv;\n"
 		    "\n"

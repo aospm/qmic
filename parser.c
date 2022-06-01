@@ -387,6 +387,9 @@ static void token_expect(enum token_id token_id, struct token *tok)
 	const char *want;
 
 	printf("want: %c\n", token_id < 128 ? token_id : token_name(token_id)[0]);
+	// printf("have: %c %s\n",
+	// 	curr_token.id < 128 ? curr_token.id : token_name(curr_token.id)[0],
+	// 	curr_token.str ?: "");
 
 	if (token_accept(token_id, tok))
 		return;
@@ -520,6 +523,64 @@ static void qmi_message_parse(enum message_type message_type)
 	list_add(&qmi_messages, &qm->node);
 }
 
+void qmi_struct_parse_assert_member_unique(struct qmi_struct *qs,
+				    const char* member_id)
+{
+	struct qmi_struct_member *qsm;
+	list_for_each_entry(qsm, &qs->members, node)
+			if (!strcmp(qsm->name, member_id))
+				yyerror("duplicate struct member \"%s\"",
+					qsm->name);
+}
+
+/**
+ * @brief add a struct as a member of a parent struct
+ *
+ * @qs: struct this @qsm is a member of
+ * @qsc: child struct represented by @qsm
+ * @id: member name
+ */
+void qmi_struct_parse_add_struct_member(struct qmi_struct *qs,
+					struct qmi_struct *qsc,
+					const char* member_id, bool is_ptr)
+{
+	struct qmi_struct_member *qsm;
+	char *id = member_id ?: qsc->name;
+	if (!id) {
+		printf("struct %s: member struct has no name\n", qs->type ?: qs->name);
+		exit(1);
+	}
+
+	qmi_struct_parse_assert_member_unique(qs, id);
+
+	qsm = memalloc(sizeof(struct qmi_struct_member));
+	qsm->name = id;
+	printf("member %s\n", qsm->name);
+	qsm->type = TYPE_STRUCT;
+	qsm->is_ptr = qsc->is_ptr || is_ptr;
+
+	qsc->name = id;
+	qsc->is_ptr = is_ptr;
+	qsm->struct_ch = qsc;
+
+	printf("struct %s: adding member struct %s\n", qs->name ?: qs->type, qsc->name);
+	list_add(&qs->members, &qsm->node);
+}
+
+/*
+ * Some not so obvious rules:
+ * The top level struct "name" property is unset.
+ * The nested struct "type" property is unset, it will be set
+ * later on in the qmi_struct_members_header() function.
+ * The type is the type of the parent struct + the name of the struct
+ * 
+ * The is_ptr property is set on the qmi_struct_member and
+ * associated qmi_struct if applicable. This makes accessing easier
+ * but isn't reaally ideal.
+ * 
+ * FIXME: set nested struct types here instead, lets us avoid type collisions
+ * and is a lot more obvious
+ */
 static struct qmi_struct *qmi_struct_parse(int nested)
 {
 	struct qmi_struct_member *qsm;
@@ -548,11 +609,16 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 			if (nested == QMI_STRUCT_NEST_MAX)
 				yyerror("Can't nest more than 32 levels deep");
 			qsc = qmi_struct_parse(nested + 1);
-			printf("exit nested %s\n", qsc->name);
-			if (token_accept('}', NULL) && qsc->name) {
+			//printf("exit nested %s\n", qsc->type);
+			qmi_struct_parse_add_struct_member(qs, qsc, NULL, is_ptr);
+			if (token_accept('}', NULL)) {
 				struct_last_member = true;
 				break;
 			}
+			/* we just parsed a member struct, the next
+				* token is another type
+				*/
+			continue;
 		}
 
 		if (token_accept('*', NULL))
@@ -561,46 +627,33 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 		token_expect(TOK_ID, &id_tok);
 		token_expect(';', NULL);
 
-		list_for_each_entry(qsm, &qs->members, node)
-			if (!strcmp(qsm->name, id_tok.str))
-				yyerror("duplicate struct member \"%s\"",
-					qsm->name);
+		if (qsc) {
+			qmi_struct_parse_add_struct_member(qs, qsc, id_tok.str, is_ptr);
+			continue;
+		}
+
+		qmi_struct_parse_assert_member_unique(qs, id_tok.str);
 
 		qsm = memalloc(sizeof(struct qmi_struct_member));
 		qsm->name = id_tok.str;
+		printf("member %s\n", qsm->name);
 		qsm->type = type_tok.num;
 		qsm->is_ptr = is_ptr;
-		if (qsc && !qsc->name) {
-			qsc->name = id_tok.str;
-			qsc->is_ptr = is_ptr;
-			printf("nested struct member: %s\n", qsc->name);
-			qsm->struct_ch = qsc;
-		}
 		if (type_tok.str)
 			free(type_tok.str);
 
 		list_add(&qs->members, &qsm->node);
 	}
 
-	if (struct_last_member) {
-		qsm = memalloc(sizeof(struct qmi_struct_member));
-		qsm->name = qsc->name;
-		qsm->type = TOK_STRUCT;
-		qsm->struct_ch = qsc;
-		// unneeded
-		qsm->is_ptr = qsc->is_ptr;
-		list_add(&qs->members, &qsm->node);
-	}
-
 	if (!struct_last_member)
 		token_expect('}', NULL);
-	
+
 	if (nested) {
 		if (token_accept('*', NULL))
 			qs->is_ptr = true;
-		printf("%d: '%c': (%s) (%s), is_ptr:%d\n", nested, curr_token.id, curr_token.str, token_name(curr_token.id), qs->is_ptr);
+		// printf("%d: '%c': (%s) (%s), struct: %s, is_ptr:%d\n", nested, curr_token.id, curr_token.str, token_name(curr_token.id), qs->name, qs->is_ptr);
 		token_expect(TOK_ID, &struct_id_tok);
-		qs->type = struct_id_tok.str;
+		qs->name = struct_id_tok.str;
 	}
 	printf("%d: %s\n", nested, qs->type);
 	token_expect(';', NULL);
@@ -610,7 +663,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 		symbol_add(qs->type, TOK_TYPE, TYPE_STRUCT, qs);
 	}
 
-	printf("Finished (%d) %s\n", nested, qs->type);
+	printf("Finished (%d) %s\n", nested, qs->type ?: qs->name);
 	if (nested)
 		return qs;
 	

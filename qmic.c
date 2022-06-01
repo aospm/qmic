@@ -105,8 +105,11 @@ int main(int argc, char **argv)
 
 	switch (method) {
 	case 0:
-		accessor_emit_c(sfp, qmi_package);
+		// FIXME: order swapped because header
+		// generation is used to set the struct type string
+		// YES THIS IS BAD
 		accessor_emit_h(hfp, qmi_package);
+		accessor_emit_c(sfp, qmi_package);
 		break;
 	case 1:
 		kernel_emit_c(sfp, qmi_package);
