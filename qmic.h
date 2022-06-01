@@ -9,6 +9,17 @@
 #define ARRAY_SIZE(x) (sizeof(x)/sizeof((x)[0]))
 
 #define QMI_STRUCT_NEST_MAX 32
+#define QMI_STRUCT_TYPE_NAME_MAX (QMI_STRUCT_NEST_MAX * 24)
+
+#define DEBUG 1
+
+#if DEBUG == 1
+#define LOGD(fmt, ...) printf(fmt, ##__VA_ARGS__)
+#else
+#define LOGD(fmtn, ...)
+#endif
+
+#define PLOGD(prefix, fmt, ...) LOGD("%s" fmt, prefix, ##__VA_ARGS__)
 
 /* Allocate and zero a block of memory; and exit if it fails */
 #define memalloc(size) ({						\
