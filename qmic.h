@@ -82,7 +82,7 @@ struct qmi_struct_member {
 };
 
 struct qmi_struct {
-	const char *name;
+	const char *type;
 	bool is_ptr;
 
 	struct list_head node;

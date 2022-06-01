@@ -534,7 +534,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 
 	if (!nested) {
 		token_expect(TOK_ID, &struct_id_tok);
-		qs->name = struct_id_tok.str;
+		qs->type = struct_id_tok.str;
 	}
 
 	token_expect('{', NULL);
@@ -600,17 +600,17 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 			qs->is_ptr = true;
 		printf("%d: '%c': (%s) (%s), is_ptr:%d\n", nested, curr_token.id, curr_token.str, token_name(curr_token.id), qs->is_ptr);
 		token_expect(TOK_ID, &struct_id_tok);
-		qs->name = struct_id_tok.str;
+		qs->type = struct_id_tok.str;
 	}
-	printf("%d: %s\n", nested, qs->name);
+	printf("%d: %s\n", nested, qs->type);
 	token_expect(';', NULL);
 
 	if (!nested) {
 		list_add(&qmi_structs, &qs->node);
-		symbol_add(qs->name, TOK_TYPE, TYPE_STRUCT, qs);
+		symbol_add(qs->type, TOK_TYPE, TYPE_STRUCT, qs);
 	}
 
-	printf("Finished (%d) %s\n", nested, qs->name);
+	printf("Finished (%d) %s\n", nested, qs->type);
 	if (nested)
 		return qs;
 	

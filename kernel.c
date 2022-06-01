@@ -22,7 +22,7 @@ static void emit_struct_definition(FILE *fp, const char *package,
 {
 	struct qmi_struct_member *qsm;
 
-	fprintf(fp, "struct %s_%s {\n", package, qs->name);
+	fprintf(fp, "struct %s_%s {\n", package, qs->type);
 
 	list_for_each_entry(qsm, &qs->members, node) {
 		switch (qsm->type) {
@@ -53,7 +53,7 @@ static void emit_struct_native_ei(FILE *fp, const char *package,
 		    "\t\t.elem_size = sizeof(%5$s),\n"
 		    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
 		    "\t},\n",
-		    package, qs->name, qsm->name,
+		    package, qs->type, qsm->name,
 		    sz_data_types[qsm->type], sz_native_types[qsm->type]);
 }
 
@@ -61,7 +61,7 @@ static void emit_struct_ei(FILE *fp, const char *package, struct qmi_struct *qs)
 {
 	struct qmi_struct_member *qsm;
 
-	fprintf(fp, "struct qmi_elem_info %s_%s_ei[] = {\n", package, qs->name);
+	fprintf(fp, "struct qmi_elem_info %s_%s_ei[] = {\n", package, qs->type);
 
 	list_for_each_entry(qsm, &qs->members, node) {
 		switch (qsm->type) {
@@ -78,7 +78,7 @@ static void emit_struct_ei(FILE *fp, const char *package, struct qmi_struct *qs)
 				    "\t\t.elem_size = sizeof(char),\n"
 				    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s)\n"
 				    "\t},\n",
-				package, qs->name, qsm->name);
+				package, qs->type, qsm->name);
 			break;
 		}
 	}
@@ -120,10 +120,10 @@ static void emit_struct_type(FILE *fp, const char *package, struct qmi_message *
 
 	if (qmm->array_size) {
 		fprintf(fp, "\tuint32_t %s_len;\n", qmm->name);
-		fprintf(fp, "\tstruct %s_%s %s[%d];\n", package, qs->name,
+		fprintf(fp, "\tstruct %s_%s %s[%d];\n", package, qs->type,
 			qmm->name, qmm->array_size);
 	} else {
-		fprintf(fp, "\tstruct %s_%s %s;\n", package, qs->name, qmm->name);
+		fprintf(fp, "\tstruct %s_%s %s;\n", package, qs->type, qmm->name);
 	}
 }
 
@@ -250,7 +250,7 @@ static void emit_struct_ref_ei(FILE *fp, const char *package, struct qmi_message
 			    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
 			    "\t\t.ei_array = %1$s_%5$s_ei,\n"
 			    "\t},\n",
-			    package, qm->name, qmm->name, qmm->id, qs->name, qmm->array_size);
+			    package, qm->name, qmm->name, qmm->id, qs->type, qmm->array_size);
 	} else {
 		fprintf(fp, "\t{\n"
 			    "\t\t.data_type = QMI_STRUCT,\n"
@@ -260,7 +260,7 @@ static void emit_struct_ref_ei(FILE *fp, const char *package, struct qmi_message
 			    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
 			    "\t\t.ei_array = %1$s_%5$s_ei,\n"
 			    "\t},\n",
-			    package, qm->name, qmm->name, qmm->id, qs->name);
+			    package, qm->name, qmm->name, qmm->id, qs->type);
 	}
 }
 
