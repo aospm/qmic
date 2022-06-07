@@ -279,7 +279,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 
 		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
 		    "{\n"
-		    "	size_t len = 0, buf_sz, amt;\n"
+		    "	size_t len = 0, buf_sz;\n"
 		    "	uint8_t *ptr;\n"
 		    "	struct %1$s_%4$s *out;\n"
 		    "\n"
@@ -300,7 +300,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 		fprintf(fp, "\n"
 			    "	return out;\n\n"
 			    "err_wrong_len:\n"
-			    "	fprintf(stderr, \"%%s: expected at least %%u bytes but got %%u\\n\", __func__, len, buf_sz);\n"
+			    "	printf(\"%%s: expected at least %%zu bytes but got %%zu\\n\", __func__, len, buf_sz);\n"
 			    "	free(out);\n"
 			    "	return NULL;\n"
 			    "}\n\n");
@@ -574,6 +574,7 @@ static void emit_header_file_header(FILE *fp)
 {
 	fprintf(fp, "#include <stdint.h>\n"
 		    "#include <stddef.h>\n"
+		    "#include <stdio.h>\n"
 		    "#include <stdlib.h>\n\n");
 	fprintf(fp, "#define get_next(_type, _sz) ({ \\\n"
 		    "	void* buf = ptr + len; \\\n"
