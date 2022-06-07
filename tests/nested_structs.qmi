@@ -1,0 +1,50 @@
+package test;
+
+struct qmi_result {
+	u16 result;
+	u16 error;
+};
+
+struct nest1 {
+	struct {
+		u8 a;
+		u8 b;
+	} nest2;
+}
+
+struct nest2 {
+	u8 b;
+	struct {
+		u8 a;
+	} nest2;
+}
+
+struct nest3 {
+	struct {
+		u8 a;
+	} nest2;
+	u8 c;
+}
+
+struct nest4 {
+	struct {
+		u8 a;
+		struct {
+			u8 b;
+		} nest3;
+		u8 d;
+	} nest2;
+	u8 c;
+}
+
+request test_request {
+	required u8 test_number = 0x12;
+} = 0x23;
+
+response test_response {
+	required qmi_result r = 20;
+} = 043;
+
+indication test_indication {
+	optional u64 value = 0x99;
+} = 0x7;
