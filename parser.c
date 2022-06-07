@@ -69,7 +69,7 @@ static char input()
 {
 	int ch;
 
-	ch = fgetc(stdin);
+	ch = fgetc(sourcefile);
 	if (ch < 0)
 		return 0;	/* End of input */
 
@@ -87,7 +87,7 @@ static void unput(int ch)
 {
 	if (ch == '\n')
 		yyline--;
-	if (ungetc(ch, stdin) != ch)
+	if (ungetc(ch, sourcefile) != ch)
 		yyerror("ungetc error");
 }
 
@@ -589,8 +589,6 @@ void qmi_struct_populate_member_struct_types(struct qmi_struct *qs, char *type)
  * associated qmi_struct if applicable. This makes accessing easier
  * but isn't reaally ideal.
  * 
- * FIXME: set nested struct types here instead, lets us avoid type collisions
- * and is a lot more obvious
  */
 static struct qmi_struct *qmi_struct_parse(int nested)
 {

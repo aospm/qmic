@@ -8,9 +8,13 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <errno.h>
+#include <sys/stat.h>
 
 #include "list.h"
 #include "qmic.h"
+
+FILE *sourcefile;
 
 const char *sz_simple_types[] = {
 	[TYPE_U8] = "uint8_t",
@@ -66,19 +70,26 @@ static void usage(void)
 {
 	extern const char *__progname;
 
-	fprintf(stderr, "Usage: %s [-ak]\n", __progname);
+	fprintf(stderr, "Usage: %s [-ak] [-f FILE] [-o dir]\n", __progname);
+	fprintf(stderr, "    -a        Emit accessor style sources for use with qmi_tlv\n");
+	fprintf(stderr, "    -k        Emit kernel style sources\n");
+	fprintf(stderr, "    -f FILE   Read from file (defaults to stdin)\n");
+	fprintf(stderr, "    -o DIR    Output directory to write to\n");
 	exit(1);
 }
 
 int main(int argc, char **argv)
 {
 	char fname[256];
+	const char* source = NULL;
+	const char* outdir = NULL;
+	struct stat sb;
 	FILE *hfp;
 	FILE *sfp;
 	int method = 0;
 	int opt;
 
-	while ((opt = getopt(argc, argv, "ak")) != -1) {
+	while ((opt = getopt(argc, argv, "akf:o:")) != -1) {
 		switch (opt) {
 		case 'a':
 			method = 0;
@@ -86,19 +97,42 @@ int main(int argc, char **argv)
 		case 'k':
 			method = 1;
 			break;
+		case 'f':
+			source = optarg;
+			break;
+		case 'o':
+			outdir = optarg;
+			break;
 		default:
 			usage();
 		}
 	}
 
+	if (source) {
+		sourcefile = fopen(source, "r");
+		if (!sourcefile) {
+			fprintf(stderr, "Failed to open '%s' (%d: %s)\n", source,
+				errno, strerror(errno));
+			return EXIT_FAILURE;
+		}
+	} else {
+		sourcefile = stdin;
+	}
+
+	if (outdir && !(stat(outdir, &sb) == 0 && S_ISDIR(sb.st_mode))) {
+		fprintf(stderr, "Specified output directory '%s' either doesn't"
+			" exist or isn't a directory\n", outdir);
+		return EXIT_FAILURE;
+	}
+
 	qmi_parse();
 
-	snprintf(fname, sizeof(fname), "qmi_%s.c", qmi_package);
+	snprintf(fname, sizeof(fname), "%s/qmi_%s.c", outdir, qmi_package);
 	sfp = fopen(fname, "w");
 	if (!sfp)
 		err(1, "failed to open %s", fname);
 
-	snprintf(fname, sizeof(fname), "qmi_%s.h", qmi_package);
+	snprintf(fname, sizeof(fname), "%s/qmi_%s.h", outdir, qmi_package);
 	hfp = fopen(fname, "w");
 	if (!hfp)
 		err(1, "failed to open %s", fname);
