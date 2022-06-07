@@ -80,7 +80,7 @@ static char input()
 {
 	int ch;
 
-	ch = fgetc(stdin);
+	ch = fgetc(sourcefile);
 	if (ch < 0)
 		return 0;	/* End of input */
 
@@ -98,7 +98,7 @@ static void unput(int ch)
 {
 	if (ch == '\n')
 		yyline--;
-	if (ungetc(ch, stdin) != ch)
+	if (ungetc(ch, sourcefile) != ch)
 		yyerror("ungetc error");
 }
 

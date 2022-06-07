@@ -73,6 +73,7 @@ struct qmi_struct {
 extern struct list_head qmi_consts;
 extern struct list_head qmi_messages;
 extern struct list_head qmi_structs;
+extern FILE *sourcefile;
 
 void qmi_parse(void);
 
