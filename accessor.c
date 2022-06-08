@@ -290,12 +290,12 @@ static void qmi_struct_emit_serialise(FILE *fp,
 
 			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
 				target[strlen(target)] = '.';
-				qmi_struct_emit_deserialise(fp, package, target,
+				qmi_struct_emit_serialise(fp, package, target,
 					indent, curr->struct_ch);
 			} else {
-				fprintf(fp, "%1$s*(%2$s*)(ptr + len) = %3$s;\n",
+				fprintf(fp, "%1$s*((%2$s*)(ptr + len)) = %3$s;\n",
 					indent, sym->type_name, target);
-				fprintf(fp, "%1$slen += %2$d\n", indent, sym->type_sz);
+				fprintf(fp, "%1$slen += %2$d;\n", indent, sym->type_sz);
 			}
 
 			indent[strlen(indent)-1] = '\0';
@@ -309,13 +309,13 @@ static void qmi_struct_emit_serialise(FILE *fp,
 			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
 				strcpy(target + strlen(target), curr->name);
 				target[strlen(target)] = '.';
-				qmi_struct_emit_deserialise(fp, package, target,
+				qmi_struct_emit_serialise(fp, package, target,
 					indent, curr->struct_ch);
 				memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
 			} else {
-				fprintf(fp, "%1$s*(%2$s*)(ptr + len) = %3$s%4$s;\n",
+				fprintf(fp, "%1$s*((%2$s*)(ptr + len)) = %3$s%4$s;\n",
 					indent, sym->type_name, target, curr->name);
-				fprintf(fp, "%1$slen += %2$d\n", indent, sym->type_sz);
+				fprintf(fp, "%1$slen += %2$d;\n", indent, sym->type_sz);
 			}
 		}
 
