@@ -366,6 +366,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
 			    "{\n"
 			    "	size_t len = 0;\n"
+			    "	int rc;\n"
 			    "	// FIXME: use realloc dynamically instead\n"
 			    "	void *ptr = malloc(1024);\n"
 			    "	memset(ptr, 0, 1014);\n",
@@ -374,7 +375,9 @@ static void qmi_struct_emit_accessors(FILE *fp,
 
 		qmi_struct_emit_serialise(fp, package, target, indent, qs);
 
-		fprintf(fp, "	return qmi_tlv_set((struct qmi_tlv*)%1$s, %2$d, ptr, len);\n"
+		fprintf(fp, "	rc = qmi_tlv_set((struct qmi_tlv*)%1$s, %2$d, ptr, len);\n"
+			    "	free(ptr);\n"
+			    "	return rc;\n"
 			    "}\n\n",
 			    message, member_id);
 
