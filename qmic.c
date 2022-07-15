@@ -16,12 +16,23 @@
 
 FILE *sourcefile;
 
-const char *sz_simple_types[] = {
-	[TYPE_U8] = "uint8_t",
-	[TYPE_U16] = "uint16_t",
-	[TYPE_U32] = "uint32_t",
-	[TYPE_U64] = "uint64_t",
-	[TYPE_STRING] = "char *",
+const struct symbol_type_table
+/* +1 because
+ * "warning: array subscript 5 is above array bounds of ‘const struct symbol_type_table[5]’
+ * [-Warray-bounds]"
+ * suspect GCC static analysis issue?
+ */
+sz_simple_types[SYMBOL_TYPE_MAX + 1] = {
+	[TYPE_U8] = {"uint8_t", 1},
+	[TYPE_U16] = {"uint16_t", 2},
+	[TYPE_U32] = {"uint32_t", 4},
+	[TYPE_U64] = {"uint64_t", 8},
+	[TYPE_I8] = {"int8_t", 1},
+	[TYPE_I16] = {"int16_t", 2},
+	[TYPE_I32] = {"int32_t", 4},
+	[TYPE_I64] = {"int64_t", 8},
+	[TYPE_STRING] = {"char *", -1},
+	[TYPE_STRUCT] = {"struct", -1},
 };
 
 void qmi_const_header(FILE *fp)

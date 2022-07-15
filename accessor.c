@@ -4,26 +4,6 @@
 
 #include "qmic.h"
 
-struct symbol_type_table {
-	const char* type_name;
-	int type_sz;
-};
-
-static const struct symbol_type_table
-/* +1 because
- * "warning: array subscript 5 is above array bounds of ‘const struct symbol_type_table[5]’
- * [-Warray-bounds]"
- * suspect GCC static analysis issue?
- */
-symbol_table_lookup[SYMBOL_TYPE_MAX + 1] = {
-	[TYPE_U8] = {"uint8_t", 1},
-	[TYPE_U16] = {"uint16_t", 2},
-	[TYPE_U32] = {"uint32_t", 4},
-	[TYPE_U64] = {"uint64_t", 8},
-	[TYPE_STRING] = {"char *", -1},
-	[TYPE_STRUCT] = {"struct", -1},
-};
-
 static void qmi_struct_members_header(FILE *fp,
 				const char *package,
 				struct qmi_struct *qs,
@@ -51,7 +31,7 @@ static void qmi_struct_members_header(FILE *fp,
 			continue;
 		}
 		fprintf(fp, "%s\t%s %s%s;\n", indent,
-				sz_simple_types[qsm->type],
+				sz_simple_types[qsm->type].name,
 				qsm->is_ptr ? "*" : "", qsm->name);
 	}
 	
@@ -165,8 +145,8 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 			exit(1);
 		}
 
-		sym = &symbol_table_lookup[curr->type];
-		PLOGD(indent, "member '%s': %s\n", curr->name, sym->type_name);
+		sym = &sz_simple_types[curr->type];
+		PLOGD(indent, "member '%s': %s\n", curr->name, sym->name);
 
 		if (curr->is_ptr && qmi_struct_assert_member_is_len(prev, curr)) {
 			strcpy(target + strlen(target), curr->name);
@@ -179,7 +159,7 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 				fprintf(fp, "sizeof(struct %1$s);\n",
 					curr->struct_ch->type);
 			} else {
-				fprintf(fp, "%1$d;\n", sym->type_sz);
+				fprintf(fp, "%1$d;\n", sym->size);
 			}
 			fprintf(fp, "%1$s%2$s = malloc(%3$s_sz *",
 				    indent, target, curr->name);
@@ -205,9 +185,9 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 					indent, curr->struct_ch);
 			} else {
 				fprintf(fp, "%1$s%2$s = get_next(%3$s, %4$d);\n",
-					indent, target, sym->type_name, sym->type_sz);
+					indent, target, sym->name, sym->size);
 				PLOGD(indent, "%s = get_next(%s, %d);\n",
-					target, sym->type_name, sym->type_sz);
+					target, sym->name, sym->size);
 			}
 
 			indent[strlen(indent)-1] = '\0';
@@ -226,7 +206,7 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 				memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
 			} else {
 				fprintf(fp, "%1$s%2$s%3$s = get_next(%4$s, %5$d);\n",
-					indent, target, curr->name, sym->type_name, sym->type_sz);
+					indent, target, curr->name, sym->name, sym->size);
 			}
 		}
 
@@ -269,8 +249,8 @@ static void qmi_struct_emit_serialise(FILE *fp,
 			exit(1);
 		}
 
-		sym = &symbol_table_lookup[curr->type];
-		PLOGD(indent, "member '%s': %s\n", curr->name, sym->type_name);
+		sym = &sz_simple_types[curr->type];
+		PLOGD(indent, "member '%s': %s\n", curr->name, sym->name);
 
 		if (curr->is_ptr && qmi_struct_assert_member_is_len(prev, curr)) {
 			strcpy(target + strlen(target), curr->name);
@@ -294,8 +274,8 @@ static void qmi_struct_emit_serialise(FILE *fp,
 					indent, curr->struct_ch);
 			} else {
 				fprintf(fp, "%1$s*((%2$s*)(ptr + len)) = %3$s;\n",
-					indent, sym->type_name, target);
-				fprintf(fp, "%1$slen += %2$d;\n", indent, sym->type_sz);
+					indent, sym->name, target);
+				fprintf(fp, "%1$slen += %2$d;\n", indent, sym->size);
 			}
 
 			indent[strlen(indent)-1] = '\0';
@@ -314,8 +294,8 @@ static void qmi_struct_emit_serialise(FILE *fp,
 				memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
 			} else {
 				fprintf(fp, "%1$s*((%2$s*)(ptr + len)) = %3$s%4$s;\n",
-					indent, sym->type_name, target, curr->name);
-				fprintf(fp, "%1$slen += %2$d;\n", indent, sym->type_sz);
+					indent, sym->name, target, curr->name);
+				fprintf(fp, "%1$slen += %2$d;\n", indent, sym->size);
 			}
 		}
 
@@ -369,7 +349,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 			    "	int rc;\n"
 			    "	// FIXME: use realloc dynamically instead\n"
 			    "	void *ptr = malloc(1024);\n"
-			    "	memset(ptr, 0, 1014);\n",
+			    "	memset(ptr, 0, 1024);\n",
 			    package, message, member, qs->type);
 		strncpy(target, "val->", 6);
 
@@ -498,16 +478,16 @@ static void qmi_message_emit_simple_prototype(FILE *fp,
 {
 	if (qmm->array_size) {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s *val, size_t count);\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type]);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name);
 
 		fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count);\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type]);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name);
 	} else {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val);\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type]);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name);
 
 		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val);\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type]);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name);
 	}
 }
 
@@ -522,7 +502,7 @@ static void qmi_message_emit_simple_accessors(FILE *fp,
 			    "{\n"
 			    "	return qmi_tlv_set_array((struct qmi_tlv*)%2$s, %5$d, %6$d, val, count, sizeof(%4$s));\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type], qmm->id, qmm->array_size);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id, qmm->array_size);
 
 		fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count)\n"
 			    "{\n"
@@ -540,13 +520,13 @@ static void qmi_message_emit_simple_accessors(FILE *fp,
 			    "	*count = len;\n"
 			    "	return ptr;\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type], qmm->id, qmm->array_size);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id, qmm->array_size);
 	} else {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val)\n"
 			    "{\n"
 			    "	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, &val, sizeof(%4$s));\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type], qmm->id);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id);
 
 		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val)\n"
 			    "{\n"
@@ -563,7 +543,7 @@ static void qmi_message_emit_simple_accessors(FILE *fp,
 			    "	*val = *(%4$s*)ptr;\n"
 			    "	return 0;\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type], qmm->id);
+			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id);
 	}
 }
 
@@ -624,18 +604,19 @@ static void qmi_message_source(FILE *fp, const char *package)
 		qmi_message_emit_message(fp, package, qm);
 
 		list_for_each_entry(qmm, &qm->members, node) {
+			if (qmm->type > SYMBOL_TYPE_MAX) {
+				fprintf(stderr, "Invalid type for member '%s'!\n", qmm->name);
+				exit(1);
+			}
 			switch (qmm->type) {
-			case TYPE_U8:
-			case TYPE_U16:
-			case TYPE_U32:
-			case TYPE_U64:
-				qmi_message_emit_simple_accessors(fp, package, qm->name, qmm);
-				break;
 			case TYPE_STRING:
 				qmi_message_emit_string_accessors(fp, package, qm->name, qmm);
 				break;
 			case TYPE_STRUCT:
 				qmi_struct_emit_accessors(fp, package, qm->name, qmm->name, qmm->id, qmm->array_size, qmm->qmi_struct);
+				break;
+			default:
+				qmi_message_emit_simple_accessors(fp, package, qm->name, qmm);
 				break;
 			};
 		}
@@ -656,18 +637,19 @@ static void qmi_message_header(FILE *fp, const char *package)
 		qmi_message_emit_message_prototype(fp, package, qm->name);
 
 		list_for_each_entry(qmm, &qm->members, node) {
+			if (qmm->type > SYMBOL_TYPE_MAX) {
+				fprintf(stderr, "Invalid type for member '%s'!\n", qmm->name);
+				exit(1);
+			}
 			switch (qmm->type) {
-			case TYPE_U8:
-			case TYPE_U16:
-			case TYPE_U32:
-			case TYPE_U64:
-				qmi_message_emit_simple_prototype(fp, package, qm->name, qmm);
-				break;
 			case TYPE_STRING:
 				qmi_message_emit_string_prototype(fp, package, qm->name, qmm);
 				break;
 			case TYPE_STRUCT:
 				qmi_struct_emit_prototype(fp, package, qm->name, qmm->name, qmm->array_size, qmm->qmi_struct);
+				break;
+			default:
+				qmi_message_emit_simple_prototype(fp, package, qm->name, qmm);
 				break;
 			};
 		}

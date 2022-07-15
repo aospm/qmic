@@ -462,6 +462,8 @@ static void qmi_message_parse(enum message_type message_type)
 		token_expect(TOK_TYPE, &type_tok);
 		token_expect(TOK_ID, &id_tok);
 
+		LOGD("Parsing property %s %s\n", sz_simple_types[type_tok.num].name, id_tok.str);
+
 		if (token_accept('[', NULL)) {
 			token_expect(TOK_NUM, &num_tok);
 			array_size = num_tok.num;
@@ -537,7 +539,7 @@ void qmi_struct_parse_add_struct_member(struct qmi_struct *qs,
 					const char* member_id, bool is_ptr)
 {
 	struct qmi_struct_member *qsm;
-	char *id = member_id ?: qsc->name;
+	const char *id = member_id ?: qsc->name;
 	if (!id) {
 		LOGD("struct %s: member struct has no name\n", qs->type ?: qs->name);
 		exit(1);
@@ -616,10 +618,10 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 		qsc = NULL;
 		if (!strcmp(type_tok.str, "struct")) {
 			if (nested == QMI_STRUCT_NEST_MAX)
-				yyerror("Can't nest more than 32 levels deep");
+				yyerror("Can't nest more than %d structs", QMI_STRUCT_NEST_MAX);
 			qsc = qmi_struct_parse(nested + 1);
 			//printf("exit nested %s\n", qsc->type);
-			qmi_struct_parse_add_struct_member(qs, qsc, NULL, is_ptr);
+			qmi_struct_parse_add_struct_member(qs, qsc, NULL, false);
 			if (token_accept('}', NULL)) {
 				struct_last_member = true;
 				break;
@@ -711,6 +713,10 @@ void qmi_parse(void)
 	symbol_add("u16", TOK_TYPE, TYPE_U16);
 	symbol_add("u32", TOK_TYPE, TYPE_U32);
 	symbol_add("u64", TOK_TYPE, TYPE_U64);
+	symbol_add("i8", TOK_TYPE, TYPE_I8);
+	symbol_add("i16", TOK_TYPE, TYPE_I16);
+	symbol_add("i32", TOK_TYPE, TYPE_I32);
+	symbol_add("i64", TOK_TYPE, TYPE_I64);
 
 	token_init();
 	while (!token_accept(TOK_EOF, NULL)) {
