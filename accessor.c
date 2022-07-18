@@ -454,9 +454,9 @@ static void qmi_message_emit_message(FILE *fp,
 
 	fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_parse(void *buf, size_t len, unsigned *txn)\n"
 		    "{\n"
-		    "	return (struct %1$s_%2$s*)qmi_tlv_decode(buf, len, txn, %3$d);\n"
+		    "	return (struct %1$s_%2$s*)qmi_tlv_decode(buf, len, txn);\n"
 		    "}\n\n",
-		    package, qm->name, qm->type);
+		    package, qm->name);
 
 	fprintf(fp, "void *%1$s_%2$s_encode(struct %1$s_%2$s *%2$s, size_t *len)\n"
 		    "{\n"
@@ -613,6 +613,8 @@ static void qmi_message_source(FILE *fp, const char *package)
 				qmi_message_emit_string_accessors(fp, package, qm->name, qmm);
 				break;
 			case TYPE_STRUCT:
+				if (!strcmp(qmm->qmi_struct->type, qmi_response_type_v01.type))
+					continue;
 				qmi_struct_emit_accessors(fp, package, qm->name, qmm->name, qmm->id, qmm->array_size, qmm->qmi_struct);
 				break;
 			default:
@@ -635,7 +637,6 @@ static void qmi_message_header(FILE *fp, const char *package)
 
 	list_for_each_entry(qm, &qmi_messages, node) {
 		qmi_message_emit_message_prototype(fp, package, qm->name);
-
 		list_for_each_entry(qmm, &qm->members, node) {
 			if (qmm->type > SYMBOL_TYPE_MAX) {
 				fprintf(stderr, "Invalid type for member '%s'!\n", qmm->name);
@@ -646,6 +647,8 @@ static void qmi_message_header(FILE *fp, const char *package)
 				qmi_message_emit_string_prototype(fp, package, qm->name, qmm);
 				break;
 			case TYPE_STRUCT:
+				if (!strcmp(qmm->qmi_struct->type, qmi_response_type_v01.type))
+					continue;
 				qmi_struct_emit_prototype(fp, package, qm->name, qmm->name, qmm->array_size, qmm->qmi_struct);
 				break;
 			default:
@@ -661,25 +664,14 @@ static void emit_header_file_header(FILE *fp)
 	fprintf(fp, "#include <stdint.h>\n"
 		    "#include <stddef.h>\n"
 		    "#include <stdio.h>\n"
-		    "#include <stdlib.h>\n\n");
+		    "#include <stdlib.h>\n\n"
+		    "#include <libqrtr.h>\n\n");
 	fprintf(fp, "#define get_next(_type, _sz) ({ \\\n"
 		    "	void* buf = ptr + len; \\\n"
 		    "	len += _sz; \\\n"
 		    "	if (len > buf_sz) goto err_wrong_len; \\\n"
 		    "	*(_type*)buf; \\\n"
 		    "})\n\n");
-	fprintf(fp, "struct qmi_tlv;\n"
-		    "\n"
-		    "struct qmi_tlv *qmi_tlv_init(unsigned txn, unsigned msg_id, unsigned type);\n"
-		    "struct qmi_tlv *qmi_tlv_decode(void *buf, size_t len, unsigned *txn, unsigned type);\n"
-		    "void *qmi_tlv_encode(struct qmi_tlv *tlv, size_t *len);\n"
-		    "void qmi_tlv_free(struct qmi_tlv *tlv);\n"
-		    "\n"
-		    "void *qmi_tlv_get(struct qmi_tlv *tlv, unsigned id, size_t *len);\n"
-		    "void *qmi_tlv_get_array(struct qmi_tlv *tlv, unsigned id, unsigned len_size, size_t *len, size_t *size);\n"
-		    "int qmi_tlv_set(struct qmi_tlv *tlv, unsigned id, void *buf, size_t len);\n"
-		    "int qmi_tlv_set_array(struct qmi_tlv *tlv, unsigned id, unsigned len_size, void *buf, size_t len, size_t size);\n"
-		    "\n");
 }
 
 void accessor_emit_c(FILE *fp, const char *package)

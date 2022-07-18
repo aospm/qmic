@@ -32,16 +32,26 @@
 		__p;							\
 	 })
 
+struct symbol_type_table {
+	const char* name;
+	int size;
+};
+
 enum symbol_type {
 	TYPE_U8,
 	TYPE_U16,
 	TYPE_U32,
 	TYPE_U64,
+	TYPE_I8,
+	TYPE_I16,
+	TYPE_I32,
+	TYPE_I64,
 	TYPE_STRING,
-	TYPE_STRUCT
-};
+	TYPE_STRUCT,
 
-#define SYMBOL_TYPE_MAX TYPE_STRUCT
+	TYPE_MAX
+#define SYMBOL_TYPE_MAX (TYPE_MAX - 1)
+};
 
 enum message_type {
 	MESSAGE_REQUEST = 0,
@@ -49,7 +59,7 @@ enum message_type {
 	MESSAGE_INDICATION = 4,
 };
 
-extern const char *sz_simple_types[];
+extern const struct symbol_type_table sz_simple_types[SYMBOL_TYPE_MAX + 1];
 
 extern const char *qmi_package;
 
@@ -107,6 +117,7 @@ struct qmi_struct {
 extern struct list_head qmi_consts;
 extern struct list_head qmi_messages;
 extern struct list_head qmi_structs;
+extern struct qmi_struct qmi_response_type_v01;
 extern FILE *sourcefile;
 
 void qmi_parse(void);

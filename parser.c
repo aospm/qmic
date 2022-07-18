@@ -307,6 +307,7 @@ static struct token yylex()
 			yyerror("strdup() failed in %s(), line %d\n",
 				__func__, __LINE__);
 		if (sym) {
+			printf("Have symbol: %s\n", sym->name);
 			token.id = sym->token_id;
 			switch (token.id) {
 			case TOK_MESSAGE:
@@ -688,6 +689,11 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 	return NULL;
 }
 
+struct qmi_struct qmi_response_type_v01 = {
+	.type = "qmi_response_type_v01",
+	.members = LIST_INIT(qmi_response_type_v01.members),
+};
+
 void qmi_parse(void)
 {
 	struct token tok;
@@ -717,6 +723,8 @@ void qmi_parse(void)
 	symbol_add("i16", TOK_TYPE, TYPE_I16);
 	symbol_add("i32", TOK_TYPE, TYPE_I32);
 	symbol_add("i64", TOK_TYPE, TYPE_I64);
+
+	symbol_add("qmi_response_type_v01", TOK_TYPE, TYPE_STRUCT, &qmi_response_type_v01);
 
 	token_init();
 	while (!token_accept(TOK_EOF, NULL)) {
