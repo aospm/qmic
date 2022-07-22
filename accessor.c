@@ -497,12 +497,13 @@ static void qmi_message_emit_simple_accessors(FILE *fp,
 					      const char *message,
 					      struct qmi_message_member *qmm)
 {
+	const struct symbol_type_table *type = &sz_simple_types[qmm->type];
 	if (qmm->array_size) {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s *val, size_t count)\n"
 			    "{\n"
 			    "	return qmi_tlv_set_array((struct qmi_tlv*)%2$s, %5$d, %6$d, val, count, sizeof(%4$s));\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id, qmm->array_size);
+			    package, message, qmm->name, type->name, qmm->id, type->size);
 
 		fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count)\n"
 			    "{\n"
@@ -520,13 +521,13 @@ static void qmi_message_emit_simple_accessors(FILE *fp,
 			    "	*count = len;\n"
 			    "	return ptr;\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id, qmm->array_size);
+			    package, message, qmm->name, type->name, qmm->id, type->size);
 	} else {
 		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val)\n"
 			    "{\n"
 			    "	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, &val, sizeof(%4$s));\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id);
+			    package, message, qmm->name, type->name, qmm->id);
 
 		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val)\n"
 			    "{\n"
@@ -543,7 +544,7 @@ static void qmi_message_emit_simple_accessors(FILE *fp,
 			    "	*val = *(%4$s*)ptr;\n"
 			    "	return 0;\n"
 			    "}\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name, qmm->id);
+			    package, message, qmm->name, type->name, qmm->id);
 	}
 }
 
