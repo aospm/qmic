@@ -135,6 +135,9 @@ int main(int argc, char **argv)
 			" exist or isn't a directory\n", outdir);
 		return EXIT_FAILURE;
 	}
+	
+	if (!outdir)
+		outdir = ".";
 
 	qmi_parse();
 
@@ -150,9 +153,6 @@ int main(int argc, char **argv)
 
 	switch (method) {
 	case 0:
-		// FIXME: order swapped because header
-		// generation is used to set the struct type string
-		// YES THIS IS BAD
 		accessor_emit_h(hfp, qmi_package);
 		accessor_emit_c(sfp, qmi_package);
 		break;
