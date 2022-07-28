@@ -1,2 +1,5 @@
 qmic
 *.o
+out/
+.vscode/
+
