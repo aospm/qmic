@@ -99,6 +99,7 @@ int main(int argc, char **argv)
 	FILE *sfp;
 	int method = 0;
 	int opt;
+	struct qmi_package package;
 
 	while ((opt = getopt(argc, argv, "akf:o:")) != -1) {
 		switch (opt) {
@@ -135,30 +136,30 @@ int main(int argc, char **argv)
 			" exist or isn't a directory\n", outdir);
 		return EXIT_FAILURE;
 	}
-	
+
 	if (!outdir)
 		outdir = ".";
 
-	qmi_parse();
+	qmi_parse(&package);
 
-	snprintf(fname, sizeof(fname), "%s/qmi_%s.c", outdir, qmi_package);
+	snprintf(fname, sizeof(fname), "%s/qmi_%s.c", outdir, package.name);
 	sfp = fopen(fname, "w");
 	if (!sfp)
 		err(1, "failed to open %s", fname);
 
-	snprintf(fname, sizeof(fname), "%s/qmi_%s.h", outdir, qmi_package);
+	snprintf(fname, sizeof(fname), "%s/qmi_%s.h", outdir, package.name);
 	hfp = fopen(fname, "w");
 	if (!hfp)
 		err(1, "failed to open %s", fname);
 
 	switch (method) {
 	case 0:
-		accessor_emit_h(hfp, qmi_package);
-		accessor_emit_c(sfp, qmi_package);
+		accessor_emit_h(hfp, package);
+		accessor_emit_c(sfp, package);
 		break;
 	case 1:
-		kernel_emit_c(sfp, qmi_package);
-		kernel_emit_h(hfp, qmi_package);
+		kernel_emit_c(sfp, package.name);
+		kernel_emit_h(hfp, package.name);
 		break;
 	}
 

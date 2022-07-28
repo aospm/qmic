@@ -4,6 +4,37 @@
 
 #include "qmic.h"
 
+/**
+ * @brief: Checks to see if builder helpers (_alloc(), _encode(), _set()) should be
+ * emitted for this qmi message
+ * 
+ * @pkg_type: The type of package this IDL file is for (server/client/agnostic)
+ * @qm: QMI message to check
+ * 
+ * If a client package, then emit builders for requests, if server then emit builders
+ * for responses.
+ */
+static inline bool should_emit_builder(enum package_type pkg_type, const struct qmi_message *qm)
+{
+	if (pkg_type == PKG_TYPE_AGNOSTIC || qm->type == MESSAGE_INDICATION)
+		return true;
+	if (pkg_type == PKG_TYPE_CLIENT && qm->type == MESSAGE_REQUEST)
+		return true;
+	if (pkg_type == PKG_TYPE_SERVER && qm->type == MESSAGE_RESPONSE)
+		return true;
+
+	return false;
+}
+
+// For agnostic packages or indication messages emit everything
+static inline bool should_emit_parser(enum package_type pkg_type, const struct qmi_message *qm)
+{
+	if (pkg_type == PKG_TYPE_AGNOSTIC || qm->type == MESSAGE_INDICATION)
+		return true;
+
+	return !should_emit_builder(pkg_type, qm);
+}
+
 static void qmi_struct_members_header(FILE *fp,
 				const char *package,
 				struct qmi_struct *qs,
@@ -60,24 +91,26 @@ static void qmi_struct_header(FILE *fp, const char *package)
 }
 
 static void qmi_struct_emit_prototype(FILE *fp,
-			       const char *package,
-			       const char *message,
+			       const struct qmi_package package,
+			       const struct qmi_message *qm,
 			       const char *member,
 			       unsigned array_size,
 			       struct qmi_struct *qs)
 {
 	if (array_size) {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val, size_t count);\n",
-			    package, message, member, qs->type);
-
-		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count);\n\n",
-			    package, message, member, qs->type);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val, size_t count);\n",
+				    package.name, qm->name, member, qs->type);
+		if (should_emit_parser(package.type, qm))
+			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count);\n\n",
+				    package.name, qm->name, member, qs->type);
 	} else {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val);\n",
-			    package, message, member, qs->type);
-
-		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s);\n\n",
-			    package, message, member, qs->type);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val);\n",
+				    package.name, qm->name, member, qs->type);
+		if (should_emit_parser(package.type, qm))
+			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s);\n\n",
+				    package.name, qm->name, member, qs->type);
 	}
 }
 
@@ -312,8 +345,8 @@ static void qmi_struct_emit_serialise(FILE *fp,
 }
 
 static void qmi_struct_emit_accessors(FILE *fp,
-			       const char *package,
-			       const char *message,
+			       const struct qmi_package package,
+			       const struct qmi_message *qm,
 			       const char *member,
 			       int member_id,
 			       unsigned array_size,
@@ -321,288 +354,303 @@ static void qmi_struct_emit_accessors(FILE *fp,
 {
 	char *indent, *target;
 	if (array_size) {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val, size_t count)\n"
-			    "{\n"
-			    "	return qmi_tlv_set_array((struct qmi_tlv*)%2$s, %5$d, %6$d, val, count, sizeof(struct %1$s_%4$s));\n"
-			    "}\n\n",
-			    package, message, member, qs->type, member_id, array_size);
-
-		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count)\n"
-			    "{\n"
-			    "	size_t size;\n"
-			    "	size_t len;\n"
-			    "	void *ptr;\n"
-			    "\n"
-			    "	ptr = qmi_tlv_get_array((struct qmi_tlv*)%2$s, %5$d, %6$d, &len, &size);\n"
-			    "	if (!ptr)\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	if (size != sizeof(struct %1$s_%4$s))\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	*count = len;\n"
-			    "	return ptr;\n"
-			    "}\n\n",
-			    package, message, member, qs->type, member_id, array_size);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val, size_t count)\n"
+				    "{\n"
+				    "	return qmi_tlv_set_array((struct qmi_tlv*)%2$s, %5$d, %6$d, val, count, sizeof(struct %1$s_%4$s));\n"
+				    "}\n\n",
+				    package.name, qm->name, member, qs->type, member_id, array_size);
+		if (should_emit_parser(package.type, qm))
+			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count)\n"
+				    "{\n"
+				    "	size_t size;\n"
+				    "	size_t len;\n"
+				    "	void *ptr;\n"
+				    "\n"
+				    "	ptr = qmi_tlv_get_array((struct qmi_tlv*)%2$s, %5$d, %6$d, &len, &size);\n"
+				    "	if (!ptr)\n"
+				    "		return NULL;\n"
+				    "\n"
+				    "	if (size != sizeof(struct %1$s_%4$s))\n"
+				    "		return NULL;\n"
+				    "\n"
+				    "	*count = len;\n"
+				    "	return ptr;\n"
+				    "}\n\n",
+				    package.name, qm->name, member, qs->type, member_id, array_size);
 	} else if (qmi_struct_has_ptr_members(qs)) {
 		indent = memalloc(QMI_STRUCT_NEST_MAX + 2);
 		indent[0] = '\t';
 		target = memalloc(TARGET_VAR_MAX_LEN);
 
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
-			    "{\n"
-			    "	size_t len = 0;\n"
-			    "	int rc;\n"
-			    "	// FIXME: use realloc dynamically instead\n"
-			    "	void *ptr = malloc(1024);\n"
-			    "	memset(ptr, 0, 1024);\n",
-			    package, message, member, qs->type);
-		strncpy(target, "val->", 6);
+		if (should_emit_builder(package.type, qm)) {
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
+				    "{\n"
+				    "	size_t len = 0;\n"
+				    "	int rc;\n"
+				    "	// FIXME: use realloc dynamically instead\n"
+				    "	void *ptr = malloc(1024);\n"
+				    "	memset(ptr, 0, 1024);\n",
+				    package.name, qm->name, member, qs->type);
+			strncpy(target, "val->", 6);
 
-		qmi_struct_emit_serialise(fp, package, target, indent, qs);
+			qmi_struct_emit_serialise(fp, package.name, target, indent, qs);
 
-		fprintf(fp, "	rc = qmi_tlv_set((struct qmi_tlv*)%1$s, %2$d, ptr, len);\n"
-			    "	free(ptr);\n"
-			    "	return rc;\n"
-			    "}\n\n",
-			    message, member_id);
+			fprintf(fp, "	rc = qmi_tlv_set((struct qmi_tlv*)%1$s, %2$d, ptr, len);\n"
+				"	free(ptr);\n"
+				"	return rc;\n"
+				"}\n\n",
+				qm->name, member_id);
+		}
+		if (should_emit_parser(package.type, qm)) {
+			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
+			"{\n"
+			"	size_t len = 0, buf_sz;\n"
+			"	uint8_t *ptr;\n"
+			"	struct %1$s_%4$s *out;\n"
+			"\n"
+			"	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &buf_sz);\n"
+			"	if (!ptr)\n"
+			"		return NULL;\n"
+			"\n"
+			"	out = malloc(sizeof(struct %1$s_%4$s));\n",
+			package.name, qm->name, member, qs->type, member_id);
 
-		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
-		    "{\n"
-		    "	size_t len = 0, buf_sz;\n"
-		    "	uint8_t *ptr;\n"
-		    "	struct %1$s_%4$s *out;\n"
-		    "\n"
-		    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &buf_sz);\n"
-		    "	if (!ptr)\n"
-		    "		return NULL;\n"
-		    "\n"
-		    "	out = malloc(sizeof(struct %1$s_%4$s));\n",
-		package, message, member, qs->type, member_id);
+			memset(indent, '\0', QMI_STRUCT_NEST_MAX + 2);
+			indent[0] = '\t';
+			memset(target, '\0', TARGET_VAR_MAX_LEN);
+			strncpy(target, "out->", 6);
 
-		memset(indent, '\0', QMI_STRUCT_NEST_MAX + 2);
-		indent[0] = '\t';
-		memset(target, '\0', TARGET_VAR_MAX_LEN);
-		strncpy(target, "out->", 6);
+			qmi_struct_emit_deserialise(fp, package.name, target, indent, qs);
 
-		qmi_struct_emit_deserialise(fp, package, target, indent, qs);
-
-		fprintf(fp, "\n"
-			    "	return out;\n\n"
-			    "err_wrong_len:\n"
-			    "	printf(\"%%s: expected at least %%zu bytes but got %%zu\\n\", __func__, len, buf_sz);\n"
-			    "	free(out);\n"
-			    "	return NULL;\n"
-			    "}\n\n");
+			fprintf(fp, "\n"
+				"	return out;\n\n"
+				"err_wrong_len:\n"
+				"	printf(\"%%s: expected at least %%zu bytes but got %%zu\\n\", __func__, len, buf_sz);\n"
+				"	free(out);\n"
+				"	return NULL;\n"
+				"}\n\n");
+		}
 	} else {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
-			    "{\n"
-			    "	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, val, sizeof(struct %1$s_%4$s));\n"
-			    "}\n\n",
-			    package, message, member, qs->type, member_id);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
+				"{\n"
+				"	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, val, sizeof(struct %1$s_%4$s));\n"
+				"}\n\n",
+				package.name, qm->name, member, qs->type, member_id);
 
-		fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
-			    "{\n"
-			    "	size_t len;\n"
-			    "	void *ptr;\n"
-			    "\n"
-			    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
-			    "	if (!ptr)\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	if (len != sizeof(struct %1$s_%4$s))\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	return ptr;\n"
-			    "}\n\n",
-			    package, message, member, qs->type, member_id);
+		if (should_emit_parser(package.type, qm))
+			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
+				"{\n"
+				"	size_t len;\n"
+				"	void *ptr;\n"
+				"\n"
+				"	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
+				"	if (!ptr)\n"
+				"		return NULL;\n"
+				"\n"
+				"	if (len != sizeof(struct %1$s_%4$s))\n"
+				"		return NULL;\n"
+				"\n"
+				"	return ptr;\n"
+				"}\n\n",
+				package.name, qm->name, member, qs->type, member_id);
 	}
 }
 
-static void qmi_message_emit_message_type(FILE *fp,
-					  const char *package,
-					  const char *message)
-{
-	fprintf(fp, "struct %s_%s;\n", package, message);
-}
-
 static void qmi_message_emit_message_prototype(FILE *fp,
-					       const char *package,
-					       const char *message)
+					       const struct qmi_package package,
+					       struct qmi_message *qm)
 {
 	fprintf(fp, "/*\n"
 		    " * %1$s_%2$s message\n"
 		    " */\n",
-		    package, message);
+		    package.name, qm->name);
 
-	fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_alloc(unsigned txn);\n",
-		    package, message);
-
-	fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_parse(void *buf, size_t len);\n",
-		    package, message);
-
-	fprintf(fp, "void *%1$s_%2$s_encode(struct %1$s_%2$s *%2$s, size_t *len);\n",
-		    package, message);
+	// NOTE: conditional inverted to emit components in a nicer order
+	if (should_emit_parser(package.type, qm)) {
+		qmi_message_emit_message_data_struct(fp, package, qm);
+		fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_parse(void *buf, size_t len);\n",
+			    package.name, qm->name);
+		fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_getall(void *buf, size_t len);\n",
+			    package.name, qm->name);
+	}
+	if (should_emit_builder(package.type, qm)) {
+		fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_alloc(unsigned txn);\n",
+			package.name, qm->name);
+		fprintf(fp, "void *%1$s_%2$s_encode(struct %1$s_%2$s *%2$s, size_t *len);\n",
+			    package.name, qm->name);
+	}
 
 	fprintf(fp, "void %1$s_%2$s_free(struct %1$s_%2$s *%2$s);\n\n",
-		    package, message);
+		    package.name, qm->name);
 }
 
 static void qmi_message_emit_message(FILE *fp,
-				     const char *package,
+				     const struct qmi_package package,
 				     struct qmi_message *qm)
 {
-	fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_alloc(unsigned txn)\n"
-		    "{\n"
-		    "	return (struct %1$s_%2$s*)qmi_tlv_init(txn, %3$d, %4$d);\n"
-		    "}\n\n",
-		    package, qm->name, qm->msg_id, qm->type);
+	if (should_emit_builder(package.type, qm)) {
+		fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_alloc(unsigned txn)\n"
+			"{\n"
+			"	return (struct %1$s_%2$s*)qmi_tlv_init(txn, %3$d, %4$d);\n"
+			"}\n\n",
+			package.name, qm->name, qm->msg_id, qm->type);
 
-	fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_parse(void *buf, size_t len)\n"
-		    "{\n"
-		    "	return (struct %1$s_%2$s*)qmi_tlv_decode(buf, len);\n"
-		    "}\n\n",
-		    package, qm->name);
-
-	fprintf(fp, "void *%1$s_%2$s_encode(struct %1$s_%2$s *%2$s, size_t *len)\n"
-		    "{\n"
-		    "	return qmi_tlv_encode((struct qmi_tlv*)%2$s, len);\n"
-		    "}\n\n",
-		    package, qm->name);
+		fprintf(fp, "void *%1$s_%2$s_encode(struct %1$s_%2$s *%2$s, size_t *len)\n"
+			"{\n"
+			"	return qmi_tlv_encode((struct qmi_tlv*)%2$s, len);\n"
+			"}\n\n",
+			package.name, qm->name);
+	}
+	if (should_emit_parser(package.type, qm)) {
+		fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_parse(void *buf, size_t len)\n"
+			"{\n"
+			"	return (struct %1$s_%2$s*)qmi_tlv_decode(buf, len);\n"
+			"}\n\n",
+			package.name, qm->name);
+		qmi_message_emit_message_data_getall(fp, package, qm);
+	}
 
 	fprintf(fp, "void %1$s_%2$s_free(struct %1$s_%2$s *%2$s)\n"
 		    "{\n"
 		    "	qmi_tlv_free((struct qmi_tlv*)%2$s);\n"
 		    "}\n\n",
-		    package, qm->name);
+		    package.name, qm->name);
 }
 
 static void qmi_message_emit_simple_prototype(FILE *fp,
-					      const char *package,
-					      const char *message,
+					      const struct qmi_package package,
+					      const struct qmi_message *qm,
 					      struct qmi_message_member *qmm)
 {
 	if (qmm->array_size) {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s *val, size_t count);\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name);
-
-		fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count);\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name);
-	} else {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val);\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name);
-
-		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val);\n\n",
-			    package, message, qmm->name, sz_simple_types[qmm->type].name);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s *val, size_t count);\n",
+				package.name, qm->name, qmm->name, sz_simple_types[qmm->type].name);
+		else
+			fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count);\n\n",
+				    package.name, qm->name, qmm->name, sz_simple_types[qmm->type].name);
+	}
+	if (should_emit_parser(package.type, qm)) {
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val);\n",
+				    package.name, qm->name, qmm->name, sz_simple_types[qmm->type].name);
+		else
+			fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val);\n\n",
+				    package.name, qm->name, qmm->name, sz_simple_types[qmm->type].name);
 	}
 }
 
 
 static void qmi_message_emit_simple_accessors(FILE *fp,
-					      const char *package,
-					      const char *message,
+					      const struct qmi_package package,
+					      const struct qmi_message *qm,
 					      struct qmi_message_member *qmm)
 {
 	const struct symbol_type_table *type = &sz_simple_types[qmm->type];
 	if (qmm->array_size) {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s *val, size_t count)\n"
-			    "{\n"
-			    "	return qmi_tlv_set_array((struct qmi_tlv*)%2$s, %5$d, %6$d, val, count, sizeof(%4$s));\n"
-			    "}\n\n",
-			    package, message, qmm->name, type->name, qmm->id, type->size);
-
-		fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count)\n"
-			    "{\n"
-			    "	%4$s *ptr;\n"
-			    "	size_t size;\n"
-			    "	size_t len;\n"
-			    "\n"
-			    "	ptr = qmi_tlv_get_array((struct qmi_tlv*)%2$s, %5$d, %6$d, &len, &size);\n"
-			    "	if (!ptr)\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	if (size != sizeof(%4$s))\n"
-			    "		return NULL;\n"
-			    "\n"
-			    "	*count = len;\n"
-			    "	return ptr;\n"
-			    "}\n\n",
-			    package, message, qmm->name, type->name, qmm->id, type->size);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s *val, size_t count)\n"
+				    "{\n"
+				    "	return qmi_tlv_set_array((struct qmi_tlv*)%2$s, %5$d, %6$d, val, count, sizeof(%4$s));\n"
+				    "}\n\n",
+				    package.name, qm->name, qmm->name, type->name, qmm->id, type->size);
+		if (should_emit_parser(package.type, qm))
+			fprintf(fp, "%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, size_t *count)\n"
+				    "{\n"
+				    "	%4$s *ptr;\n"
+				    "	size_t size;\n"
+				    "	size_t len;\n"
+				    "\n"
+				    "	ptr = qmi_tlv_get_array((struct qmi_tlv*)%2$s, %5$d, %6$d, &len, &size);\n"
+				    "	if (!ptr)\n"
+				    "		return NULL;\n"
+				    "\n"
+				    "	if (size != sizeof(%4$s))\n"
+				    "		return NULL;\n"
+				    "\n"
+				    "	*count = len;\n"
+				    "	return ptr;\n"
+				    "}\n\n",
+				    package.name, qm->name, qmm->name, type->name, qmm->id, type->size);
 	} else {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val)\n"
-			    "{\n"
-			    "	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, &val, sizeof(%4$s));\n"
-			    "}\n\n",
-			    package, message, qmm->name, type->name, qmm->id);
-
-		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val)\n"
-			    "{\n"
-			    "	%4$s *ptr;\n"
-			    "	size_t len;\n"
-			    "\n"
-			    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
-			    "	if (!ptr)\n"
-			    "		return -ENOENT;\n"
-			    "\n"
-			    "	if (len != sizeof(%4$s))\n"
-			    "		return -EINVAL;\n"
-			    "\n"
-			    "	*val = *(%4$s*)ptr;\n"
-			    "	return 0;\n"
-			    "}\n\n",
-			    package, message, qmm->name, type->name, qmm->id);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, %4$s val)\n"
+				"{\n"
+				"	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, &val, sizeof(%4$s));\n"
+				"}\n\n",
+				package.name, qm->name, qmm->name, type->name, qmm->id);
+		if (should_emit_parser(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, %4$s *val)\n"
+				"{\n"
+				"	%4$s *ptr;\n"
+				"	size_t len;\n"
+				"\n"
+				"	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
+				"	if (!ptr)\n"
+				"		return -ENOENT;\n"
+				"\n"
+				"	if (len != sizeof(%4$s))\n"
+				"		return -EINVAL;\n"
+				"\n"
+				"	*val = *(%4$s*)ptr;\n"
+				"	return 0;\n"
+				"}\n\n",
+				package.name, qm->name, qmm->name, type->name, qmm->id);
 	}
 }
 
 static void qmi_message_emit_string_prototype(FILE *fp,
-					      const char *package,
-					      const char *message,
+					      const struct qmi_package package,
+					      const struct qmi_message *qm,
 					      struct qmi_message_member *qmm)
 {
 	if (qmm->array_size) {
 		fprintf(stderr, "Dont' know how to encode string arrays yet");
 		exit(1);
 	} else {
-		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t len);\n",
-			    package, message, qmm->name);
-
-		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t buflen);\n\n",
-			    package, message, qmm->name);
+		if (should_emit_builder(package.type, qm))
+			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t len);\n",
+				    package.name, qm->name, qmm->name);
+		else
+			fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t buflen);\n\n",
+				    package.name, qm->name, qmm->name);
 	}
 }
 
 static void qmi_message_emit_string_accessors(FILE *fp,
-					      const char *package,
-					      const char *message,
+					      const struct qmi_package package,
+					      const struct qmi_message *qm,
 					      struct qmi_message_member *qmm)
 {
-	fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t len)\n"
-		    "{\n"
-		    "	return qmi_tlv_set((struct qmi_tlv*)%2$s, %4$d, buf, len);\n"
-		    "}\n\n",
-		    package, message, qmm->name, qmm->id);
-
-	fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t buflen)\n"
-		    "{\n"
-		    "	size_t len;\n"
-		    "	char *ptr;\n"
-		    "\n"
-		    "	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %4$d, &len);\n"
-		    "	if (!ptr)\n"
-		    "		return -ENOENT;\n"
-		    "\n"
-		    "	if (len >= buflen)\n"
-		    "		return -ENOMEM;\n"
-		    "\n"
-		    "	memcpy(buf, ptr, len);\n"
-		    "	buf[len] = '\\0';\n"
-		    "	return len;\n"
-		    "}\n\n",
-		    package, message, qmm->name, qmm->id);
-
+	if (should_emit_builder(package.type, qm))
+		fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t len)\n"
+			"{\n"
+			"	return qmi_tlv_set((struct qmi_tlv*)%2$s, %4$d, buf, len);\n"
+			"}\n\n",
+			package.name, qm->name, qmm->name, qmm->id);
+	if (should_emit_parser(package.type, qm))
+		fprintf(fp, "int %1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t buflen)\n"
+			"{\n"
+			"	size_t len;\n"
+			"	char *ptr;\n"
+			"\n"
+			"	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %4$d, &len);\n"
+			"	if (!ptr)\n"
+			"		return -ENOENT;\n"
+			"\n"
+			"	if (len >= buflen)\n"
+			"		return -ENOMEM;\n"
+			"\n"
+			"	memcpy(buf, ptr, len);\n"
+			"	buf[len] = '\\0';\n"
+			"	return len;\n"
+			"}\n\n",
+			package.name, qm->name, qmm->name, qmm->id);
 }
 
-static void qmi_message_source(FILE *fp, const char *package)
+static void qmi_message_source(FILE *fp, const struct qmi_package package)
 {
 	struct qmi_message_member *qmm;
 	struct qmi_message *qm;
@@ -617,33 +665,33 @@ static void qmi_message_source(FILE *fp, const char *package)
 			}
 			switch (qmm->type) {
 			case TYPE_STRING:
-				qmi_message_emit_string_accessors(fp, package, qm->name, qmm);
+				qmi_message_emit_string_accessors(fp, package, qm, qmm);
 				break;
 			case TYPE_STRUCT:
 				if (!strcmp(qmm->qmi_struct->type, qmi_response_type_v01.type))
 					continue;
-				qmi_struct_emit_accessors(fp, package, qm->name, qmm->name, qmm->id, qmm->array_size, qmm->qmi_struct);
+				qmi_struct_emit_accessors(fp, package, qm, qmm->name, qmm->id, qmm->array_size, qmm->qmi_struct);
 				break;
 			default:
-				qmi_message_emit_simple_accessors(fp, package, qm->name, qmm);
+				qmi_message_emit_simple_accessors(fp, package, qm, qmm);
 				break;
 			};
 		}
 	}
 }
 
-static void qmi_message_header(FILE *fp, const char *package)
+static void qmi_message_header(FILE *fp, const struct qmi_package package)
 {
 	struct qmi_message_member *qmm;
 	struct qmi_message *qm;
 
 	list_for_each_entry(qm, &qmi_messages, node)
-		qmi_message_emit_message_type(fp, package, qm->name);
+		fprintf(fp, "struct %s_%s;\n", package.name, qm->name);
 
 	fprintf(fp, "\n");
 
 	list_for_each_entry(qm, &qmi_messages, node) {
-		qmi_message_emit_message_prototype(fp, package, qm->name);
+		qmi_message_emit_message_prototype(fp, package, qm);
 		list_for_each_entry(qmm, &qm->members, node) {
 			if (qmm->type > SYMBOL_TYPE_MAX) {
 				fprintf(stderr, "Invalid type for member '%s'!\n", qmm->name);
@@ -651,15 +699,15 @@ static void qmi_message_header(FILE *fp, const char *package)
 			}
 			switch (qmm->type) {
 			case TYPE_STRING:
-				qmi_message_emit_string_prototype(fp, package, qm->name, qmm);
+				qmi_message_emit_string_prototype(fp, package, qm, qmm);
 				break;
 			case TYPE_STRUCT:
 				if (!strcmp(qmm->qmi_struct->type, qmi_response_type_v01.type))
 					continue;
-				qmi_struct_emit_prototype(fp, package, qm->name, qmm->name, qmm->array_size, qmm->qmi_struct);
+				qmi_struct_emit_prototype(fp, package, qm, qmm->name, qmm->array_size, qmm->qmi_struct);
 				break;
 			default:
-				qmi_message_emit_simple_prototype(fp, package, qm->name, qmm);
+				qmi_message_emit_simple_prototype(fp, package, qm, qmm);
 				break;
 			};
 		}
@@ -681,19 +729,19 @@ static void emit_header_file_header(FILE *fp)
 		    "})\n\n");
 }
 
-void accessor_emit_c(FILE *fp, const char *package)
+void accessor_emit_c(FILE *fp, const struct qmi_package package)
 {
-	emit_source_includes(fp, package);
+	emit_source_includes(fp, package.name);
 	qmi_message_source(fp, package);
 }
 	
-void accessor_emit_h(FILE *fp, const char *package)
+void accessor_emit_h(FILE *fp, const struct qmi_package package)
 {
-	guard_header(fp, qmi_package);
+	guard_header(fp, package.name);
 	emit_header_file_header(fp);
 	qmi_const_header(fp);
-	qmi_struct_header(fp, qmi_package);
-	qmi_message_header(fp, qmi_package);
+	qmi_struct_header(fp, package.name);
+	qmi_message_header(fp, package);
 	guard_footer(fp);
 	LOGD("\n\t==\nEmitted headers\n\t==\n\n");
 }

@@ -19,7 +19,7 @@
 #define TOKEN_BUF_SIZE		128	/* TOKEN_BUF_MIN or more */
 #define TOKEN_BUF_MIN		24	/* Enough for a 64-bit octal number */
 
-const char *qmi_package;
+static struct qmi_package qmi_package;
 
 struct list_head qmi_consts = LIST_INIT(qmi_consts);
 struct list_head qmi_messages = LIST_INIT(qmi_messages);
@@ -33,6 +33,7 @@ enum token_id {
 	TOK_NUM,
 	TOK_VALUE,
 	TOK_PACKAGE,
+	TOK_PACKAGE_TYPE,
 	TOK_STRUCT,
 	TOK_TYPE,
 	TOK_REQUIRED,
@@ -395,16 +396,51 @@ static void token_expect(enum token_id token_id, struct token *tok)
 	}
 }
 
+/**
+ * @brief: packages of type "server" need to call the _alloc(),
+ * _set()  * and _encode() functions on QMI response messages, but
+ * usually  * don't need to _parse() them. The opposite is true for
+ * requests.
+ * 
+ * This is all inverted for "clients" who don't need to _alloc()
+ * or _encode() responses, only _parse(). And who need to _set() on
+ * requests but not on responses.
+ * 
+ * Specifying a package type will cause only the necessary tlv
+ * helpers to be generated and avoid extra bloat.
+ * 
+ */
+static void qmi_package_type_parse(void)
+{
+	struct token tok;
+	static bool parsed = false;
+
+	if (parsed)
+		yyerror("type may only be specified once");
+
+	token_expect(TOK_ID, &tok);
+
+	if (!strcmp(tok.str, "server"))
+		qmi_package.type = PKG_TYPE_SERVER;
+	else if (!strcmp(tok.str, "client"))
+		qmi_package.type = PKG_TYPE_CLIENT;
+	else if (!strcmp(tok.str, "agnostic"))
+		qmi_package.type = PKG_TYPE_AGNOSTIC;
+
+	token_expect(';', NULL);
+	parsed = true;
+}
+
 static void qmi_package_parse(void)
 {
 	struct token tok;
 
-	token_expect(TOK_ID, &tok);
-	token_expect(';', NULL);
-
-	if (qmi_package)
+	if (qmi_package.name)
 		yyerror("package may only be specified once");
-	qmi_package = tok.str;
+
+	token_expect(TOK_ID, &tok);
+	qmi_package.name = tok.str;
+	token_expect(';', NULL);
 }
 
 static void qmi_const_parse()
@@ -718,11 +754,12 @@ struct qmi_struct qmi_response_type_v01 = {
 	.members = LIST_INIT(qmi_response_type_v01.members),
 };
 
-void qmi_parse(void)
+void qmi_parse(struct qmi_package *out_pkg)
 {
 	struct token tok;
 
-	/* PACKAGE ID<string> ';' */
+	/* PACKAGE ID<string>';' */
+	/* [PACKAGE_TYPE (SERVER | CLIENT | AGNOSTIC)';'] */
 	/* CONST ID<string> '=' NUM<num> ';' */
 	/* STRUCT ID<string> '{' ... '}' ';' */
 		/* TYPE<type*> ID<string> ';' */
@@ -736,6 +773,7 @@ void qmi_parse(void)
 	symbol_add("response", TOK_MESSAGE, MESSAGE_RESPONSE);
 	symbol_add("indication", TOK_MESSAGE, MESSAGE_INDICATION);
 	symbol_add("package", TOK_PACKAGE);
+	symbol_add("package_type", TOK_PACKAGE_TYPE);
 	symbol_add("required", TOK_REQUIRED);
 	symbol_add("struct", TOK_STRUCT);
 	symbol_add("string", TOK_TYPE, TYPE_STRING);
@@ -750,10 +788,14 @@ void qmi_parse(void)
 
 	symbol_add("qmi_response_type_v01", TOK_TYPE, TYPE_STRUCT, &qmi_response_type_v01);
 
+	qmi_package.type = PKG_TYPE_AGNOSTIC;
+
 	token_init();
 	while (!token_accept(TOK_EOF, NULL)) {
 		if (token_accept(TOK_PACKAGE, NULL)) {
 			qmi_package_parse();
+		} else if (token_accept(TOK_PACKAGE_TYPE, NULL)) {
+			qmi_package_type_parse();
 		} else if (token_accept(TOK_CONST, NULL)) {
 			qmi_const_parse();
 		} else if (token_accept(TOK_STRUCT, NULL)) {
@@ -770,6 +812,9 @@ void qmi_parse(void)
 	LOGD("\n\t==\nFinished parsing\n\t==\n\n");
 
 	/* The package name must have been specified */
-	if (!qmi_package)
+	if (!qmi_package.name)
 		yyerror("package not specified");
+	
+	out_pkg->name = qmi_package.name;
+	out_pkg->type = qmi_package.type;
 }

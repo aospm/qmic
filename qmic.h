@@ -61,7 +61,16 @@ enum message_type {
 
 extern const struct symbol_type_table sz_simple_types[SYMBOL_TYPE_MAX + 1];
 
-extern const char *qmi_package;
+enum package_type {
+	PKG_TYPE_SERVER = (1 << 0),
+	PKG_TYPE_CLIENT = (1 << 1),
+	PKG_TYPE_AGNOSTIC = (PKG_TYPE_CLIENT | PKG_TYPE_SERVER),
+};
+
+struct qmi_package {
+	char *name;
+	enum package_type type;
+};
 
 struct qmi_const {
 	const char *name;
@@ -123,15 +132,15 @@ extern struct list_head qmi_structs;
 extern struct qmi_struct qmi_response_type_v01;
 extern FILE *sourcefile;
 
-void qmi_parse(void);
+void qmi_parse(struct qmi_package *out_pkg);
 
 void emit_source_includes(FILE *fp, const char *package);
 void guard_header(FILE *fp, const char *package);
 void guard_footer(FILE *fp);
 void qmi_const_header(FILE *fp);
 
-void accessor_emit_c(FILE *fp, const char *package);
-void accessor_emit_h(FILE *fp, const char *package);
+void accessor_emit_c(FILE *fp, struct qmi_package package);
+void accessor_emit_h(FILE *fp, struct qmi_package package);
 
 void kernel_emit_c(FILE *fp, const char *package);
 void kernel_emit_h(FILE *fp, const char *package);
