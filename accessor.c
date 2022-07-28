@@ -29,6 +29,12 @@ static void qmi_struct_members_header(FILE *fp,
 			qmi_struct_members_header(fp, package,
 					qsm->struct_ch, indent);
 			continue;
+		} else if (qsm->struct_type) {
+			LOGD("struct pointer to %s\n", qsm->struct_type);
+			fprintf(fp, "%s\tstruct %s_%s %s%s;\n", indent,
+				package, qsm->struct_type,
+				qsm->is_ptr ? "*" : "", qsm->name);
+			continue;
 		}
 		fprintf(fp, "%s\t%s %s%s;\n", indent,
 				sz_simple_types[qsm->type].name,

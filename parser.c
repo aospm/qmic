@@ -603,6 +603,7 @@ void qmi_struct_populate_member_struct_types(struct qmi_struct *qs, char *type)
 static struct qmi_struct *qmi_struct_parse(int nested)
 {
 	struct qmi_struct_member *qsm;
+	char *qsm_struct_type = NULL;
 	struct qmi_struct *qsc = NULL;
 	struct token struct_id_tok;
 	struct qmi_struct *qs;
@@ -615,6 +616,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 	if (!nested) {
 		token_expect(TOK_ID, &struct_id_tok);
 		qs->type = struct_id_tok.str;
+		LOGD("Start %s\n", qs->type);
 	}
 
 	token_expect('{', NULL);
@@ -624,20 +626,31 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 	while (token_accept(TOK_TYPE, &type_tok) || token_accept(TOK_STRUCT, &type_tok)) {
 		bool is_ptr = false;
 		qsc = NULL;
+		// If this member is referencing a previously defined struct
+		// (known because the token_accept will succeed) then don't
+		// nest, struct_id_tok will be the type of the struct
 		if (!strcmp(type_tok.str, "struct")) {
-			if (nested == QMI_STRUCT_NEST_MAX)
-				yyerror("Can't nest more than %d structs", QMI_STRUCT_NEST_MAX);
-			qsc = qmi_struct_parse(nested + 1);
-			//printf("exit nested %s\n", qsc->type);
-			qmi_struct_parse_add_struct_member(qs, qsc, NULL, false);
-			if (token_accept('}', NULL)) {
-				struct_last_member = true;
-				break;
+			if (token_accept(TOK_TYPE, &struct_id_tok)) {
+				qsm_struct_type = memalloc(strlen(struct_id_tok.str));
+				strcpy(qsm_struct_type, struct_id_tok.str);
+				LOGD("%s is struct ptr!\n", qsm_struct_type);
+			} else if (token_accept(TOK_ID, &struct_id_tok)) {
+				yyerror("struct %s referenced but not defined!", struct_id_tok.str);
+			} else {
+				if (nested == QMI_STRUCT_NEST_MAX)
+					yyerror("Can't nest more than %d structs", QMI_STRUCT_NEST_MAX);
+				qsc = qmi_struct_parse(nested + 1);
+				//printf("exit nested %s\n", qsc->type);
+				qmi_struct_parse_add_struct_member(qs, qsc, NULL, false);
+				if (token_accept('}', NULL)) {
+					struct_last_member = true;
+					break;
+				}
+				/* we just parsed a member struct, the next
+					* token is another type
+					*/
+				continue;
 			}
-			/* we just parsed a member struct, the next
-				* token is another type
-				*/
-			continue;
 		}
 
 		if (token_accept('*', NULL))
@@ -656,6 +669,10 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 		qsm = memalloc(sizeof(struct qmi_struct_member));
 		qsm->name = id_tok.str;
 		LOGD("member %s\n", qsm->name);
+		if (qsm_struct_type) {
+			qsm->struct_type = qsm_struct_type;
+			qsm_struct_type = NULL;
+		}
 		qsm->type = type_tok.num;
 		qsm->is_ptr = is_ptr;
 		if (type_tok.str)

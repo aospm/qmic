@@ -96,6 +96,9 @@ struct qmi_struct;
 
 struct qmi_struct_member {
 	const char *name;
+	// If set, this member is a pointer
+	// to an existing struct
+	const char *struct_type;
 	int type;
 	bool is_ptr;
 	/* This member might be a struct */
