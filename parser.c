@@ -361,6 +361,11 @@ static void token_init(void)
 
 static bool token_accept(enum token_id token_id, struct token *tok)
 {
+	// printf("want: %c\n", token_id < 128 ? token_id : token_name(token_id)[0]);
+	// printf("have: %c %s\n",
+	// 	curr_token.id < 128 ? curr_token.id : token_name(curr_token.id)[0],
+	// 	curr_token.str ?: "");
+
 	if (curr_token.id != token_id)
 		return false;
 
@@ -378,11 +383,6 @@ static bool token_accept(enum token_id token_id, struct token *tok)
 static void token_expect(enum token_id token_id, struct token *tok)
 {
 	const char *want;
-
-	// printf("want: %c\n", token_id < 128 ? token_id : token_name(token_id)[0]);
-	// printf("have: %c %s\n",
-	// 	curr_token.id < 128 ? curr_token.id : token_name(curr_token.id)[0],
-	// 	curr_token.str ?: "");
 
 	if (token_accept(token_id, tok))
 		return;
