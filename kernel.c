@@ -313,6 +313,9 @@ static void emit_h_file_header(FILE *fp)
 		    "\n"
 		    "#include \"libqrtr.h\"\n"
 		    "\n");
+	fprintf(fp, "#ifdef __cplusplus\n"
+		    "extern \"C\" {\n"
+		    "#endif\n\n");	
 };
 
 void kernel_emit_c(FILE *fp, const char *package)

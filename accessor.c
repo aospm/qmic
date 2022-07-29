@@ -824,6 +824,9 @@ static void emit_header_file_header(FILE *fp)
 		    "#include <stdio.h>\n"
 		    "#include <stdlib.h>\n\n"
 		    "#include <libqrtr.h>\n\n");
+	fprintf(fp, "#ifdef __cplusplus\n"
+		    "extern \"C\" {\n"
+		    "#endif\n\n");	
 	fprintf(fp, "#define get_next(_type, _sz) ({ \\\n"
 		    "	void* buf = ptr + len; \\\n"
 		    "	len += _sz; \\\n"

@@ -74,6 +74,9 @@ void guard_header(FILE *fp, const char *package)
 
 void guard_footer(FILE *fp)
 {
+	fprintf(fp, "#ifdef __cplusplus\n"
+		    "}\n"
+		    "#endif\n\n");	
 	fprintf(fp, "#endif\n");
 }
 
