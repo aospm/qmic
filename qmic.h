@@ -120,6 +120,7 @@ struct qmi_struct {
 	const char *type;
 	const char *name;
 	bool is_ptr;
+	bool has_ptr_members;
 
 	struct list_head node;
 

@@ -689,7 +689,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 			}
 		}
 
-		if (token_accept('*', NULL))
+		if (token_accept('*', NULL) || type_tok.num == TYPE_STRING)
 			is_ptr = true;
 
 		token_expect(TOK_ID, &id_tok);
