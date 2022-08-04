@@ -625,11 +625,7 @@ void qmi_struct_populate_member_struct_types(struct qmi_struct *qs, char *type)
 }
 
 /*
- * Some not so obvious rules:
- * The top level struct "name" property is unset.
- * The nested struct "type" property is unset, it will be set
- * later on in the qmi_struct_members_header() function.
- * The type is the type of the parent struct + the name of the struct
+ * NOTE: The top level struct "name" property is unset.
  * 
  * The is_ptr property is set on the qmi_struct_member and
  * associated qmi_struct if applicable. This makes accessing easier
@@ -645,6 +641,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 	struct qmi_struct *qs;
 	struct token type_tok;
 	struct token id_tok;
+	struct token num_tok;
 	bool struct_last_member = false;
 
 	qs = memalloc(sizeof(struct qmi_struct));
@@ -661,6 +658,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 
 	while (token_accept(TOK_TYPE, &type_tok) || token_accept(TOK_STRUCT, &type_tok)) {
 		bool is_ptr = false;
+		unsigned array_size = 0;
 		qsc = NULL;
 		// If this member is referencing a previously defined struct
 		// (known because the token_accept will succeed) then don't
@@ -693,6 +691,15 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 			is_ptr = true;
 
 		token_expect(TOK_ID, &id_tok);
+		if (token_accept('[', NULL)) {
+			if (is_ptr)
+				yyerror("Can't have pointer to array");
+			if (qsc)
+				yyerror("FIXME: Don't know how to do arrays of structs");
+			token_expect(TOK_NUM, &num_tok);
+			array_size = num_tok.num;
+			token_expect(']', NULL);
+		}
 		token_expect(';', NULL);
 
 		if (qsc) {
@@ -711,6 +718,7 @@ static struct qmi_struct *qmi_struct_parse(int nested)
 		}
 		qsm->type = type_tok.num;
 		qsm->is_ptr = is_ptr;
+		qsm->array_size = array_size;
 		if (type_tok.str)
 			free(type_tok.str);
 
@@ -782,6 +790,7 @@ void qmi_parse(struct qmi_package *out_pkg)
 	symbol_add("u32", TOK_TYPE, TYPE_U32);
 	symbol_add("u64", TOK_TYPE, TYPE_U64);
 	symbol_add("i8", TOK_TYPE, TYPE_I8);
+	symbol_add("char", TOK_TYPE, TYPE_CHAR);
 	symbol_add("i16", TOK_TYPE, TYPE_I16);
 	symbol_add("i32", TOK_TYPE, TYPE_I32);
 	symbol_add("i64", TOK_TYPE, TYPE_I64);

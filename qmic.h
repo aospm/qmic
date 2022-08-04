@@ -46,6 +46,7 @@ enum symbol_type {
 	TYPE_I16,
 	TYPE_I32,
 	TYPE_I64,
+	TYPE_CHAR,
 	TYPE_STRING,
 	TYPE_STRUCT,
 
@@ -110,6 +111,7 @@ struct qmi_struct_member {
 	const char *struct_type;
 	int type;
 	bool is_ptr;
+	unsigned array_size;
 	/* This member might be a struct */
 	struct qmi_struct* struct_ch;
 
@@ -125,6 +127,8 @@ struct qmi_struct {
 	struct list_head node;
 
 	struct list_head members;
+
+	bool emitted;
 };
 
 extern struct list_head qmi_consts;

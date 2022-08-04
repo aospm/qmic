@@ -67,9 +67,15 @@ static void qmi_struct_members_header(FILE *fp,
 				qsm->is_ptr ? "*" : "", qsm->name);
 			continue;
 		}
-		fprintf(fp, "%s\t%s %s%s;\n", indent,
+		fprintf(fp, "%s\t%s %s%s", indent,
 				sz_simple_types[qsm->type].name,
 				qsm->is_ptr ? "*" : "", qsm->name);
+
+		if (qsm->array_size) {
+			fprintf(fp, "[%u]", qsm->array_size);
+		}
+
+		fprintf(fp, ";\n");
 	}
 	
 	if (indent[0] != '\0') {
@@ -108,10 +114,15 @@ static void qmi_struct_emit_prototype(FILE *fp,
 		if (should_emit_builder(package.type, qm))
 			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val);\n",
 				    package.name, qm->name, member, qs->type);
-		if (should_emit_parser(package.type, qm))
-			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s);\n\n",
+		if (should_emit_parser(package.type, qm)) {
+			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s);\n",
 				    package.name, qm->name, member, qs->type);
+			fprintf(fp, "void %1$s_%2$s_free(struct %1$s_%2$s *val);\n",
+				package.name, qs->type);
+		}
 	}
+
+	fprintf(fp, "\n");
 }
 
 static bool qmi_struct_has_ptr_members(struct qmi_struct *qs)
@@ -257,8 +268,10 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 				// FIXME: yeah this is pretty janky...
 				// Also I think not all QMI messages bother with null terminated strings
 				// Maybe that's only when the string IS a TLV
-				fprintf(fp, "%1$s%2$s%3$s = get_next(%4$s, strlen(ptr) + 1);\n",
-					indent, target, curr->name, sym->name);
+				fprintf(fp, "%1$s%2$s%3$s = malloc(strlen(ptr + len));\n",
+					indent, target, curr->name);
+				fprintf(fp, "%1$sstrcpy(%2$s%3$s, ptr + len); len += strlen(ptr + len);\n",
+					indent, target, curr->name);
 			} else {
 				fprintf(fp, "%1$s%2$s%3$s = get_next(%4$s, %5$d);\n",
 					indent, target, curr->name, sym->name, sym->size);
@@ -347,6 +360,10 @@ static void qmi_struct_emit_serialise(FILE *fp,
 				qmi_struct_emit_serialise(fp, package, target,
 					indent, curr->struct_ch);
 				memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
+			} else if (curr->type == TYPE_STRING) {
+				fprintf(fp, "%1$sstrcpy(ptr + len, %2$s%3$s);\n",
+					indent, target, curr->name);
+				fprintf(fp, "%1$slen += strlen(%2$s%3$s);\n", indent, target, curr->name);
 			} else {
 				fprintf(fp, "%1$s*((%2$s*)(ptr + len)) = %3$s%4$s;\n",
 					indent, sym->name, target, curr->name);
@@ -369,8 +386,9 @@ static void qmi_struct_emit_serialise(FILE *fp,
  * @target: current object we're setting properties on
  * @qs: the struct we're freeing
  */
-static void qmi_struct_emit_free(FILE *fp,
+static void qmi_struct_emit_free_recurse(FILE *fp,
 			       const char *package,
+			       char *indent,
 			       char *target,
 			       struct qmi_struct *qs)
 {
@@ -391,48 +409,90 @@ static void qmi_struct_emit_free(FILE *fp,
 			exit(1);
 		}
 
-		if (!curr->is_ptr && curr->type != TYPE_STRUCT && )
+		if (!curr->is_ptr && curr->type != TYPE_STRUCT && curr->type != TYPE_STRING)
+			continue;
 
 		sym = &sz_simple_types[curr->type];
-		LOGD("member '%s': %s\n", curr->name, sym->name);
+		PLOGD(indent, "member '%s': %s\n", curr->name, sym->name);
 
-		if (curr->type == TYPE_STRUCT && qmi_struct_has_ptr_members(curr)) {
-
-		}
-		
-		if (curr->is_ptr) {
+		// Pointer to a previously defined struct
+		if (curr->struct_type && curr->is_ptr) {
+			fprintf(stderr, "pointers to other structs unsupported\n");
+			exit(1);
+			fprintf(fp, "%1$s_%2$s_free(%3$s);\n",
+				package, curr->struct_type, curr->name);
+		} else if (curr->type == TYPE_STRUCT
+				&& qmi_struct_has_ptr_members(curr->struct_ch)) {
 			strcpy(target + strlen(target), curr->name);
 
-			LOGD("	new target: '%s'\n", target);
+			PLOGD(indent, "	new target: '%s'\n", target);
 
-			fprintf(fp, "for(size_t %1$s = 0; %1$s < %2$s_n; %1$s++) {\n",
-				    iter, target);
+			// target_len = strlen(target);
+			// temp = target[target_len - 2 -i];
+			// target[target_len - 2 -i] = '\0';
+
+			fprintf(fp, "%1$sfor(size_t %2$s = 0; %2$s < %3$s_n; %2$s++) {\n",
+				    indent, iter, target);
+
+			//target[target_len - 2 -i] = temp;
 
 			target[strlen(target)] = '[';
 			strncpy(target + strlen(target), iter, i);
 			strncpy(target + strlen(target), "]", 2);
 
-			if (curr->type == TYPE_STRUCT && curr->struct_ch) {
-				target[strlen(target)] = '.';
-				qmi_struct_emit_free(fp, package, target,
-					indent, curr->struct_ch);
-			} else {
-				fprintf(fp, "%1$s%2$s = get_next(%3$s, %4$d);\n",
-					indent, target, sym->name, sym->size);
-				LOGD("%s = get_next(%s, %d);\n",
-					target, sym->name, sym->size);
-			}
+			indent[strlen(indent)] = '\t';
 
-			fprintf(fp, "free(%2$s);",
-				    indent, target, curr->name);
+			target[strlen(target)] = '.';
+			qmi_struct_emit_free_recurse(fp, package,
+				indent, target, curr->struct_ch);
+
+			indent[strlen(indent)-1] = '\0';
+			fprintf(fp, "%1$s}\n", indent);
 
 			memset(target + old_target_len, '\0', TARGET_VAR_MAX_LEN - old_target_len);
+		}
+
+		if (curr->is_ptr) {
+			fprintf(fp, "%1$sfree(%2$s%3$s);\n",
+				    indent, target, curr->name);
 		}
 
 		prev = curr;
 	}
 
+	// if (strlen(indent) > 1)
+	// 	fprintf(fp, "%1$sfree(%2$s%3$s);\n",
+	// 			    indent, target, qs->name);
+
+
 	LOGD("Leaving %s, target: %s\n", qs->name ? qs->name : qs->type, target);
+}
+
+static void qmi_struct_emit_free(FILE *fp,
+			       const struct qmi_package package,
+			       struct qmi_struct *qs)
+{
+	char *indent, *target;
+
+	indent = memalloc(QMI_STRUCT_NEST_MAX + 2);
+	indent[0] = '\t';
+	target = memalloc(TARGET_VAR_MAX_LEN);
+
+	printf("\n\nEmitting struct free: %s\n", qs->type);
+	fprintf(fp, "void %1$s_%2$s_free(struct %1$s_%2$s *val)\n"
+		    "{\n",
+		package.name, qs->type);
+
+	strncpy(target, "val->", 6);
+
+	printf("\n\nEMIT FREE FOR STRUCT: %s\n", qs->type);
+	qmi_struct_emit_free_recurse(fp, package.name, indent, target, qs);
+
+	fprintf(fp, "\n"
+		    "}\n\n");
+
+	free(indent);
+	free(target);
 }
 
 static void qmi_struct_emit_accessors(FILE *fp,
@@ -521,20 +581,10 @@ static void qmi_struct_emit_accessors(FILE *fp,
 				"	free(out);\n"
 				"	return NULL;\n"
 				"}\n\n");
-
-
-			fprintf(fp, "void %1$s_%2$s_free_%3$s(struct %1$s_%4$s *val)\n"
-			"{\n",
-			package.name, qm->name, member, qs->type, member_id);
-
-			memset(target, '\0', TARGET_VAR_MAX_LEN);
-			strncpy(target, "val->", 6);
-
-			qmi_struct_emit_free(fp, package.name, target, qs);
-
-			fprintf(fp, "\n"
-				    "}\n\n");
 		}
+
+		free(indent);
+		free(target);
 	} else {
 		if (should_emit_builder(package.type, qm))
 			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
@@ -599,7 +649,7 @@ static void qmi_message_emit_message_data_struct(FILE *fp,
 				qmm->name);
 		else
 			fprintf(fp, "\t%1$s %2$s%3$s;\n",
-				sym->name, (qmm->array_size ? "*" : ""), qmm->name);
+				sym->name, ((qmm->array_size || qmm->type == TYPE_STRING) ? "*" : ""), qmm->name);
 	}
 
 	fprintf(fp, "};\n\n");
@@ -625,8 +675,8 @@ static void qmi_message_emit_message_data_getall(FILE *fp,
 			fprintf(fp, "\tdata->%3$s = %1$s_%2$s_get_%3$s(%2$s);\n",
 				package.name, qm->name, qmm->name);
 		else if (qmm->type == TYPE_STRUCT && qmm->id == 0x2) {
-			fprintf(fp, "\tdata->%2$s = malloc(sizeof(struct qmi_response_type_v01));\n",
-				qm->name, qmm->name, qmm->id);
+			fprintf(fp, "\tdata->%1$s = malloc(sizeof(struct qmi_response_type_v01));\n",
+				qmm->name);
 			fprintf(fp, "\tmemcpy(data->%2$s, qmi_tlv_get((struct qmi_tlv*)%1$s, %3$d, NULL), sizeof(struct qmi_response_type_v01));\n",
 				qm->name, qmm->name, qmm->id);
 		} else if (qmm->type == TYPE_STRUCT)
@@ -658,25 +708,23 @@ static void qmi_message_emit_message_data_free(FILE *fp,
 {
 	struct qmi_message_member *qmm;
 
-	fprintf(fp, "void %1$s_%2$s_data_free(struct %1$s_%2$s *%2$s, struct %1$s_%2$s_data *data)\n"
-		    "{\n"
-		    "	int rc;\n"
-		    "	(void)rc;\n\n",
+	fprintf(fp, "void %1$s_%2$s_data_free(struct %1$s_%2$s_data *data)\n"
+		    "{\n\n",
 		package.name, qm->name);
 
 	list_for_each_entry(qmm, &qm->members, node) {
-		if (qmm->array_size || qmm->type == TYPE_STRING) {
-			fprintf(fp, "\tfree(data->%3$s);\n",
-				package.name, qm->name, qmm->name);
-		} else if (qmm->type == TYPE_STRUCT) {
+		fprintf(fp, "\tif(data->%1$s_valid) {\n",
+			qmm->name);
+		if (qmm->type == TYPE_STRUCT) {
 			if (qmi_struct_has_ptr_members(qmm->qmi_struct)) {
-				fprintf(fp, "\t%1$s_%2$s_free_%3$s(%2$s, &data->%3$s);\n",
-				package.name, qm->name, qmm->name);
-			} else {
-				fprintf(fp, "\tfree(data->%3$s);\n",
-				package.name, qm->name, qmm->name);
+				fprintf(fp, "\t\t%1$s_%2$s_free(data->%3$s);\n",
+				package.name, qmm->qmi_struct->type, qmm->name);
 			}
+			fprintf(fp, "\t\tfree(data->%1$s);\n", qmm->name);
+		} else if (qmm->array_size || qmm->type == TYPE_STRING) {
+			fprintf(fp, "\t\tfree(data->%1$s);\n", qmm->name);
 		}
+		fprintf(fp, "\t}\n");
 	}
 
 	fprintf(fp, "}\n\n");
@@ -698,7 +746,7 @@ static void qmi_message_emit_message_prototype(FILE *fp,
 			    package.name, qm->name);
 		fprintf(fp, "void %1$s_%2$s_getall(struct %1$s_%2$s *%2$s, struct %1$s_%2$s_data *data);\n",
 			    package.name, qm->name);
-		fprintf(fp, "void %1$s_%2$s_data_free(struct %1$s_%2$s *%2$s, struct %1$s_%2$s_data *data);\n",
+		fprintf(fp, "void %1$s_%2$s_data_free(struct %1$s_%2$s_data *data);\n",
 			    package.name, qm->name);
 	}
 	if (should_emit_builder(package.type, qm)) {
@@ -736,6 +784,7 @@ static void qmi_message_emit_message(FILE *fp,
 			"}\n\n",
 			package.name, qm->name);
 		qmi_message_emit_message_data_getall(fp, package, qm);
+		qmi_message_emit_message_data_free(fp, package, qm);
 	}
 
 	fprintf(fp, "void %1$s_%2$s_free(struct %1$s_%2$s *%2$s)\n"
@@ -886,6 +935,7 @@ static void qmi_message_source(FILE *fp, const struct qmi_package package)
 {
 	struct qmi_message_member *qmm;
 	struct qmi_message *qm;
+	struct qmi_struct *qs;
 
 	list_for_each_entry(qm, &qmi_messages, node) {
 		qmi_message_emit_message(fp, package, qm);
@@ -909,6 +959,14 @@ static void qmi_message_source(FILE *fp, const struct qmi_package package)
 				break;
 			};
 		}
+	}
+
+	list_for_each_entry(qs, &qmi_structs, node) {
+		if (!strcmp(qs->type, qmi_response_type_v01.type))
+			continue;
+		if (!qmi_struct_has_ptr_members(qs))
+			continue;
+		qmi_struct_emit_free(fp, package, qs);
 	}
 }
 

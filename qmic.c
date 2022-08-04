@@ -31,7 +31,8 @@ sz_simple_types[SYMBOL_TYPE_MAX + 1] = {
 	[TYPE_I16] = {"int16_t", 2},
 	[TYPE_I32] = {"int32_t", 4},
 	[TYPE_I64] = {"int64_t", 8},
-	[TYPE_STRING] = {"char *", -1},
+	[TYPE_CHAR] = {"char", 1},
+	[TYPE_STRING] = {"char", -1},
 	[TYPE_STRUCT] = {"struct", -1},
 };
 
@@ -144,6 +145,8 @@ int main(int argc, char **argv)
 		outdir = ".";
 
 	qmi_parse(&package);
+
+	printf("Outputting: '%s/qmi_%s.[ch]\n", outdir, package.name);
 
 	snprintf(fname, sizeof(fname), "%s/qmi_%s.c", outdir, package.name);
 	sfp = fopen(fname, "w");
