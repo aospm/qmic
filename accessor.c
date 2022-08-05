@@ -222,7 +222,7 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 			} else {
 				fprintf(fp, "%1$d;\n", sym->size);
 			}
-			fprintf(fp, "%1$s%2$s = malloc(%3$s_sz *",
+			fprintf(fp, "%1$s%2$s = malloc(1 + %3$s_sz *",
 				    indent, target, curr->name);
 			// target_len = strlen(target);
 			// temp = target[target_len - 2 -i];
@@ -269,7 +269,7 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 				// FIXME: yeah this is pretty janky...
 				// Also I think not all QMI messages bother with null terminated strings
 				// Maybe that's only when the string IS a TLV
-				fprintf(fp, "%1$s%2$s%3$s = malloc(strlen(ptr + len));\n",
+				fprintf(fp, "%1$s%2$s%3$s = malloc(strlen(ptr + len) + 1);\n",
 					indent, target, curr->name);
 				fprintf(fp, "%1$sstrcpy(%2$s%3$s, ptr + len); len += strlen(ptr + len);\n",
 					indent, target, curr->name);
@@ -454,7 +454,9 @@ static void qmi_struct_emit_free_recurse(FILE *fp,
 		}
 
 		if (curr->is_ptr) {
-			fprintf(fp, "%1$sfree(%2$s%3$s);\n",
+			fprintf(fp, "%1$sif(%2$s%3$s)\n",
+				    indent, target, curr->name);
+			fprintf(fp, "%1$s\tfree(%2$s%3$s);\n",
 				    indent, target, curr->name);
 		}
 
@@ -530,7 +532,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 				    "	return ptr;\n"
 				    "}\n\n",
 				    package.name, qm->name, member, qs->type, member_id, array_size);
-	} else if (qmi_struct_has_ptr_members(qs)) {
+	} else {
 		indent = memalloc(QMI_STRUCT_NEST_MAX + 2);
 		indent[0] = '\t';
 		target = memalloc(TARGET_VAR_MAX_LEN);
@@ -586,30 +588,6 @@ static void qmi_struct_emit_accessors(FILE *fp,
 
 		free(indent);
 		free(target);
-	} else {
-		if (should_emit_builder(package.type, qm))
-			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, struct %1$s_%4$s *val)\n"
-				"{\n"
-				"	return qmi_tlv_set((struct qmi_tlv*)%2$s, %5$d, val, sizeof(struct %1$s_%4$s));\n"
-				"}\n\n",
-				package.name, qm->name, member, qs->type, member_id);
-
-		if (should_emit_parser(package.type, qm))
-			fprintf(fp, "struct %1$s_%4$s *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s)\n"
-				"{\n"
-				"	size_t len;\n"
-				"	void *ptr;\n"
-				"\n"
-				"	ptr = qmi_tlv_get((struct qmi_tlv*)%2$s, %5$d, &len);\n"
-				"	if (!ptr)\n"
-				"		return NULL;\n"
-				"\n"
-				"	if (len != sizeof(struct %1$s_%4$s))\n"
-				"		return NULL;\n"
-				"\n"
-				"	return ptr;\n"
-				"}\n\n",
-				package.name, qm->name, member, qs->type, member_id);
 	}
 }
 
