@@ -96,6 +96,9 @@ struct qmi_message {
 	enum message_type type;
 	const char *name;
 	unsigned msg_id;
+	/* Set if this message is an alias to another message */
+	/* e.g. an indication with the same TLVs as a response */
+	struct qmi_message *sibling;
 
 	struct list_head node;
 

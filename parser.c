@@ -471,7 +471,8 @@ static void qmi_const_parse()
 static void qmi_message_parse(enum message_type message_type)
 {
 	struct qmi_message_member *qmm;
-	struct qmi_message *qm;
+	struct qmi_message *qm, *qs, *sibling = NULL;
+	char *sibling_name;
 	struct token msg_id_tok;
 	struct token type_tok;
 	struct token num_tok;
@@ -487,6 +488,23 @@ static void qmi_message_parse(enum message_type message_type)
 	qm->name = msg_id_tok.str;
 	qm->type = message_type;
 	list_init(&qm->members);
+
+	if (token_accept('=', NULL)) {
+		token_expect(TOK_ID, &id_tok);
+		sibling_name = id_tok.str;
+		list_for_each_entry(qs, &qmi_messages, node) {
+			if (!strcmp(qs->name, sibling_name)) {
+				sibling = qs;
+				break;
+			}
+		}
+		if (!sibling)
+			yyerror("Can't find message: %s", sibling_name);
+		LOGD("Using members of sibling message: %s", sibling_name);
+		qm->members.next = sibling->members.next;
+		qm->members.prev = sibling->members.prev;
+		qm->sibling = sibling;
+	}
 
 	while (!token_accept('}', NULL)) {
 		if (token_accept(TOK_REQUIRED, NULL))

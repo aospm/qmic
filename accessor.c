@@ -273,6 +273,10 @@ static void qmi_struct_emit_deserialise(FILE *fp,
 					indent, target, curr->name);
 				fprintf(fp, "%1$sstrcpy(%2$s%3$s, ptr + len); len += strlen(ptr + len);\n",
 					indent, target, curr->name);
+			} else if (curr->array_size) {
+				fprintf(fp, "%1$smemcpy(&%2$s%3$s, ptr + len, %4$d * %5$d);\n"
+					    "%1$slen += %4$d * %5$d;\n",
+					indent, target, curr->name, curr->array_size, sym->size);
 			} else {
 				fprintf(fp, "%1$s%2$s%3$s = get_next(%4$s, %5$d);\n",
 					indent, target, curr->name, sym->name, sym->size);
@@ -365,6 +369,10 @@ static void qmi_struct_emit_serialise(FILE *fp,
 				fprintf(fp, "%1$sstrcpy(ptr + len, %2$s%3$s);\n",
 					indent, target, curr->name);
 				fprintf(fp, "%1$slen += strlen(%2$s%3$s);\n", indent, target, curr->name);
+			} else if (curr->array_size) {
+				fprintf(fp, "%1$smemcpy(ptr + len, &%2$s%3$s, %4$d * %5$d);\n"
+					    "%1$slen += %4$d * %5$d;\n",
+					indent, target, curr->name, curr->array_size, sym->size);
 			} else {
 				fprintf(fp, "%1$s*((%2$s*)(ptr + len)) = %3$s%4$s;\n",
 					indent, sym->name, target, curr->name);
@@ -519,7 +527,7 @@ static void qmi_struct_emit_accessors(FILE *fp,
 				    "{\n"
 				    "	size_t size;\n"
 				    "	size_t len;\n"
-				    "	void *ptr;\n"
+				    "	void *ptr, *out;\n"
 				    "\n"
 				    "	ptr = qmi_tlv_get_array((struct qmi_tlv*)%2$s, %5$d, %6$d, &len, &size);\n"
 				    "	if (!ptr)\n"
@@ -529,9 +537,11 @@ static void qmi_struct_emit_accessors(FILE *fp,
 				    "		return NULL;\n"
 				    "\n"
 				    "	*count = len;\n"
-				    "	return ptr;\n"
+				    "	out = malloc(len);\n"
+				    "	memcpy(out, ptr, len);\n"
+				    "	return out;\n"
 				    "}\n\n",
-				    package.name, qm->name, member, qs->type, member_id, array_size);
+				    package.name, qm->name, member, qs->type, member_id, 2);
 	} else {
 		indent = memalloc(QMI_STRUCT_NEST_MAX + 2);
 		indent[0] = '\t';
@@ -598,6 +608,9 @@ static void qmi_message_emit_message_data_struct(FILE *fp,
 	struct qmi_message_member *qmm;
 	const struct symbol_type_table *sym;
 
+	if (qm->sibling)
+		return;
+
 	if (list_empty(&qm->members))
 		return;
 
@@ -645,6 +658,12 @@ static void qmi_message_emit_message_data_getall(FILE *fp,
 
 	if (list_empty(&qm->members))
 		return;
+	
+	if (qm->sibling) {
+		fprintf(fp, "#define %1$s_%2$s_getall %1$s_%3$s_getall\n",
+			package.name, qm->name, qm->sibling->name);
+		return;
+	}
 
 	fprintf(fp, "void %1$s_%2$s_getall(struct %1$s_%2$s *%2$s, struct %1$s_%2$s_data *data)\n"
 		    "{\n"
@@ -695,6 +714,12 @@ static void qmi_message_emit_message_data_free(FILE *fp,
 
 	if (list_empty(&qm->members))
 		return;
+	
+	if (qm->sibling) {
+		fprintf(fp, "#define %1$s_%2$s_free %1$s_%3$s_free\n",
+			package.name, qm->name, qm->sibling->name);
+		return;
+	}
 
 	fprintf(fp, "void %1$s_%2$s_data_free(struct %1$s_%2$s_data *data)\n"
 		    "{\n\n",
@@ -732,9 +757,16 @@ static void qmi_message_emit_message_prototype(FILE *fp,
 		    " */\n",
 		    package.name, qm->name);
 
+	if (qm->sibling) {
+		fprintf(fp, "#define %1$s_%2$s_getall %1$s_%3$s_getall\n",
+			package.name, qm->name, qm->sibling->name);
+		return;
+	}
+
+	qmi_message_emit_message_data_struct(fp, package, qm);
+
 	// NOTE: conditional inverted to emit components in a nicer order
 	if (should_emit_parser(package.type, qm)) {
-		qmi_message_emit_message_data_struct(fp, package, qm);
 		fprintf(fp, "struct %1$s_%2$s *%1$s_%2$s_parse(void *buf, size_t len);\n",
 			    package.name, qm->name);
 		if (!list_empty(&qm->members)) {
@@ -885,7 +917,7 @@ static void qmi_message_emit_string_prototype(FILE *fp,
 		if (should_emit_builder(package.type, qm))
 			fprintf(fp, "int %1$s_%2$s_set_%3$s(struct %1$s_%2$s *%2$s, char *buf, size_t len);\n",
 				    package.name, qm->name, qmm->name);
-		else
+		if (should_emit_parser(package.type, qm))
 			fprintf(fp, "char *%1$s_%2$s_get_%3$s(struct %1$s_%2$s *%2$s);\n\n",
 				    package.name, qm->name, qmm->name);
 	}
