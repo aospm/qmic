@@ -634,7 +634,8 @@ static void qmi_message_emit_message_data_struct(FILE *fp,
 				qmm->name);
 
 		// result structs are special
-		if (qmm->type == TYPE_STRUCT && qmm->id == 0x2)
+		if (qmm->type == TYPE_STRUCT && !strcmp(qmm->qmi_struct->type,
+			"qmi_response_type_v01"))
 			fprintf(fp, "\t%1$s %2$s *%3$s;\n",
 				sym->name, qmm->qmi_struct->type,
 				qmm->name);
