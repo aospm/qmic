@@ -16,17 +16,6 @@
 #include "list.h"
 #include "qmic.h"
 
-/* Allocate and zero a block of memory; and exit if it fails */
-#define memalloc(size) ({						\
-		void *__p = malloc(size);				\
-									\
-		if (!__p)						\
-			errx(1, "malloc() failed in %s(), line %d\n",	\
-				__func__, __LINE__);			\
-		memset(__p, 0, size);					\
-		__p;							\
-	 })
-
 #define TOKEN_BUF_SIZE		128	/* TOKEN_BUF_MIN or more */
 #define TOKEN_BUF_MIN		24	/* Enough for a 64-bit octal number */
 
@@ -184,6 +173,8 @@ static void symbol_add(const char *name, enum token_id token_id, ...)
 {
 	struct symbol *sym;
 	va_list ap;
+
+	//printf("Adding symbol: %s\n", name);
 
 	assert(symbol_valid(name));
 
@@ -520,31 +511,192 @@ static void qmi_message_parse(enum message_type message_type)
 	list_add(&qmi_messages, &qm->node);
 }
 
-static void qmi_struct_parse(void)
+static void qmi_struct_gen_names(struct qmi_struct *qs, char *_namebuf)
 {
 	struct qmi_struct_member *qsm;
+	char *namebuf = memalloc(1024);
+
+	if (qs->name) {
+		// In case this is a reference to a previously defined struct
+		if (symbol_find(qs->name))
+			return;
+		strcpy(namebuf, qs->name);
+		free(qs->name);
+	} else {
+		strcpy(namebuf, _namebuf);
+		strcat(namebuf, "_");
+		strcat(namebuf, qs->member->name);
+	}
+
+	qs->name = strdup(namebuf);
+	list_for_each_entry(qsm, &qs->members, node)
+		if (qsm->type == TYPE_STRUCT && !qsm->is_struct_ref) {
+			qmi_struct_gen_names(qsm->qmi_struct, qs->name);
+		}
+
+	symbol_add(qs->name, TOK_TYPE, TYPE_STRUCT, qs);
+}
+
+/*
+ * @brief: parses the type to use for variable array lengh, or the
+ * length of a fixed array.
+ * 
+ * structs containing variable length arrays must be in
+ * length-value format, the number of bytes used to store the length
+ * is specific to the particular QMI message, this function is used to
+ * parse that format, example:
+ * 
+ * struct file_attrs_t {
+ * 	u16 file_size;
+ * 	u16 file_id;
+ * 	...
+ * 	u8 *raw_data(u16); # u16 is the type used to encode the size
+ * };
+ * 
+ * The packed QMI message will look something like this (this isn't a valid C struct
+ * as the variable length data might not be at the end):
+ * 
+ * struct file_attrs_msg {
+ * 	u16 file_size;
+ * 	u16 file_id;
+ * 	...
+ * 	u16 raw_data_len;
+ * 	u8 raw_data[];
+ * };
+ */
+static inline void qmi_struct_parse_array_len_size(struct qmi_struct_member *qsm)
+{
+	struct token array_len_size;
+
+	qsm->array_len_type = TYPE_U8;
+
+	if (token_accept('(', NULL)) {
+		if (!qsm->is_ptr)
+			yyerror("Variable arrays must be pointer types");
+
+		token_expect(TOK_TYPE, &array_len_size);
+		if (array_len_size.qmi_struct)
+			yyerror("Can't use struct type as array length");
+		token_expect(')', NULL);
+		qsm->array_len_type = array_len_size.num;
+	} else if (token_accept('[', NULL)) {
+		if (qsm->is_ptr)
+			yyerror("Fixed arrays can't be pointers");
+
+		token_expect(TOK_NUM, &array_len_size);
+		token_expect(']', NULL);
+		qsm->array_size = array_len_size.num;
+		qsm->array_fixed = !!qsm->array_size;
+	}
+
+	return;
+}
+
+static void qmi_struct_parse(void)
+{
+	struct qmi_struct_member *qsm, *qsm_temp;
 	struct token struct_id_tok;
+	struct qmi_struct **structs;
 	struct qmi_struct *qs;
+	int nest = 0;
 	struct token type_tok;
 	struct token id_tok;
 
 	token_expect(TOK_ID, &struct_id_tok);
 	token_expect('{', NULL);
 
-	qs = memalloc(sizeof(struct qmi_struct));
+	structs = memalloc(sizeof(struct qmi_struct*) * STRUCT_NEST_MAX);
+	qs = structs[0] = memalloc(sizeof(struct qmi_struct));
+
 	qs->name = struct_id_tok.str;
 	list_init(&qs->members);
 
-	while (token_accept(TOK_TYPE, &type_tok)) {
+	while (true) {
+		char *struct_type = NULL;
+		qsm = memalloc(sizeof(struct qmi_struct_member));
+		/*
+		 * If we find a nested struct definition, "push" it to the structs stack
+		 * and parse the struct header. Also parse a member which references a previously
+		 * defined struct.
+		 *	struct [TYPE] [REFERENCE|DEFINITION]
+		 *	REFERENCE: (required TYPE)[*]ID<string>';'
+		 *	DEFINITION: '{' MEMBERS '}' ';'
+		 */
+		if (token_accept(TOK_STRUCT, NULL)) {
+			/*
+			 * If we accept TOK_TYPE, that means the struct was already defined
+			 * if instead we accept TOK_ID then it's a custom type for a new struct
+			 */
+			if (token_accept(TOK_TYPE, &type_tok)) {
+				qsm->qmi_struct = type_tok.qmi_struct;
+				qsm->is_struct_ref = true;
+				if (!qsm->qmi_struct) // SHOULD NOT HAPPEN
+					yyerror("Can't find qmi_struct pointer for \"%s\"",
+						type_tok.str);
+			} else {
+				// Optionally define a custom type for the nested struct
+				if (token_accept(TOK_ID, &id_tok))
+					struct_type = id_tok.str;
+
+				// Add the struct member associated with this nested
+				// struct
+				list_add(&qs->members, &qsm->node);
+
+				nest++;
+				if (nest == STRUCT_NEST_MAX) {
+					yyerror("Can't have nested structs more than %d levels "
+						"deep!", STRUCT_NEST_MAX);
+				}
+				qs = structs[nest] = memalloc(sizeof(struct qmi_struct));
+				list_init(&qs->members);
+
+				// Save this for later
+				qs->member = qsm;
+				if (struct_type)
+					qs->name = struct_type;
+
+				token_expect('{', NULL);
+				continue;
+			}
+		} else if (!token_accept(TOK_TYPE, &type_tok)) {
+			token_expect('}', NULL);
+
+			if (nest) {
+				qsm = qs->member;
+				if (token_accept('*', NULL))
+					qsm->is_ptr = true;
+				token_expect(TOK_ID, &id_tok);
+				qsm->name = id_tok.str;
+				qsm->type = TYPE_STRUCT;
+				qsm->qmi_struct = qs;
+
+				qmi_struct_parse_array_len_size(qsm);
+			}
+
+			token_expect(';', NULL);
+
+			list_add(&qmi_structs, &qs->node);
+
+			if (!nest)
+				break;
+
+			nest--;
+			qs = structs[nest];
+			continue;
+		}
+
+		if (token_accept('*', NULL))
+			qsm->is_ptr = true;
 		token_expect(TOK_ID, &id_tok);
+		qmi_struct_parse_array_len_size(qsm);
 		token_expect(';', NULL);
 
-		list_for_each_entry(qsm, &qs->members, node)
-			if (!strcmp(qsm->name, id_tok.str))
+		list_for_each_entry(qsm_temp, &qs->members, node)
+			if (!strcmp(qsm_temp->name, id_tok.str))
 				yyerror("duplicate struct member \"%s\"",
-					qsm->name);
+					qsm_temp->name);
+		
 
-		qsm = memalloc(sizeof(struct qmi_struct_member));
 		qsm->name = id_tok.str;
 		qsm->type = type_tok.num;
 		if (type_tok.str)
@@ -553,13 +705,16 @@ static void qmi_struct_parse(void)
 		list_add(&qs->members, &qsm->node);
 	}
 
-	token_expect('}', NULL);
-	token_expect(';', NULL);
+	assert(nest == 0);
+	free(structs);
 
-	list_add(&qmi_structs, &qs->node);
-
-	symbol_add(qs->name, TOK_TYPE, TYPE_STRUCT, qs);
+	qmi_struct_gen_names(qs, memalloc(1024));
 }
+
+struct qmi_struct qmi_response_type_v01 = {
+	.name = "qmi_response_type_v01",
+	.members = LIST_INIT(qmi_response_type_v01.members),
+};
 
 void qmi_parse(void)
 {
@@ -586,6 +741,8 @@ void qmi_parse(void)
 	symbol_add("u16", TOK_TYPE, TYPE_U16);
 	symbol_add("u32", TOK_TYPE, TYPE_U32);
 	symbol_add("u64", TOK_TYPE, TYPE_U64);
+
+	symbol_add(qmi_response_type_v01.name, TOK_TYPE, TYPE_STRUCT, &qmi_response_type_v01);
 
 	token_init();
 	while (!token_accept(TOK_EOF, NULL)) {
