@@ -194,6 +194,12 @@ static void emit_struct_type(FILE *fp, const char *package, struct qmi_message *
 			     struct qmi_message_member *qmm)
 {
 	struct qmi_struct *qs = qmm->qmi_struct;
+
+	if (!strcmp(qs->name, "qmi_response_type_v01")) {
+		fprintf(fp, "\tstruct %s %s;\n", qs->name, qmm->name);
+		return;
+	}
+
 	if (!qmm->required)
 		fprintf(fp, "\tbool %s_valid;\n", qmm->name);
 
@@ -359,6 +365,19 @@ static void emit_struct_ref_ei(FILE *fp, const char *package, struct qmi_message
 			   struct qmi_message_member *qmm)
 {
 	struct qmi_struct *qs = qmm->qmi_struct;
+
+	if (!strcmp(qs->name, "qmi_response_type_v01")) {
+		fprintf(fp, "\t{\n"
+			    "\t\t.data_type = QMI_STRUCT,\n"
+			    "\t\t.elem_len = 1,\n"
+			    "\t\t.elem_size = sizeof(struct %5$s),\n"
+			    "\t\t.tlv_type = %4$d,\n"
+			    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
+			    "\t\t.ei_array = %5$s_ei,\n"
+			    "\t},\n",
+			    package, qm->name, qmm->name, qmm->id, qs->name);
+		return;
+	}
 
 	if (!qmm->required) {
 		fprintf(fp, "\t{\n"
