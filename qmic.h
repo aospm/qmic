@@ -49,6 +49,10 @@ struct qmi_message_member {
 	bool required;
 	unsigned array_size;
 	bool array_fixed;
+	/* Number of bytes used to encode array length.
+	 * only valid for variable arrays.
+	 */
+	int array_len_type;
 
 	struct list_head node;
 };

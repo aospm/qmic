@@ -439,6 +439,7 @@ static void qmi_message_parse(enum message_type message_type)
 	struct token num_tok;
 	struct token id_tok;
 	unsigned array_size;
+	int array_len_type;
 	bool array_fixed;
 	bool required;
 
@@ -451,6 +452,9 @@ static void qmi_message_parse(enum message_type message_type)
 	list_init(&qm->members);
 
 	while (!token_accept('}', NULL)) {
+		array_len_type = -1;
+		array_size = 0;
+		array_fixed = false;
 		if (token_accept(TOK_REQUIRED, NULL))
 			required = true;
 		else if (token_accept(TOK_OPTIONAL, NULL))
@@ -467,12 +471,15 @@ static void qmi_message_parse(enum message_type message_type)
 			token_expect(']', NULL);
 			array_fixed = true;
 		} else if (token_accept('(', NULL)) {
-			token_expect(TOK_NUM, &num_tok);
-			array_size = num_tok.num;
+			if (token_accept(TOK_NUM, &num_tok)) {
+				array_size = num_tok.num;
+			} else if (token_accept(TOK_TYPE, &num_tok)) {
+				if (num_tok.num > TYPE_CHAR)
+					yyerror("Array size type must be a basic type");
+				array_len_type = num_tok.num;
+				array_size = 1;
+			}
 			token_expect(')', NULL);
-			array_fixed = false;
-		} else {
-			array_size = 0;
 			array_fixed = false;
 		}
 
@@ -498,6 +505,7 @@ static void qmi_message_parse(enum message_type message_type)
 		qmm->id = num_tok.num;
 		qmm->required = required;
 		qmm->array_size = array_size;
+		qmm->array_len_type = array_len_type;
 		qmm->array_fixed = array_fixed;
 
 		list_add(&qm->members, &qmm->node);
@@ -576,8 +584,8 @@ static inline void qmi_struct_parse_array_len_size(struct qmi_struct_member *qsm
 			yyerror("Variable length arrays must define the length type, "
 				"e.g. u8 *my_data(u16);");
 		token_expect(TOK_TYPE, &array_len_size);
-		if (array_len_size.qmi_struct)
-			yyerror("Can't use struct type as array length");
+		if (array_len_size.num >= TYPE_STRING)
+			yyerror("Array size type must be a basic type");
 		token_expect(')', NULL);
 		qsm->array_len_type = array_len_size.num;
 	} else if (token_accept('[', NULL)) {

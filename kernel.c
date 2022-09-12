@@ -111,7 +111,7 @@ static void emit_struct_nested_ei(FILE *fp, const char *package,
 			"\t\t.array_type = VAR_LEN_ARRAY,\n"
 			"\t\t.elem_size = sizeof(struct %1$s_%2$s),\n"
 			"\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
-			"\t\t.ei_array = %1$s_%4$s_ei,\n"
+			"\t\t.ei_array = &%1$s_%4$s_ei,\n"
 			"\t},\n",
 			package, qs->name, qsm->name, qsm->qmi_struct->name);
 	} else {
@@ -120,7 +120,7 @@ static void emit_struct_nested_ei(FILE *fp, const char *package,
 			"\t\t.elem_len = 1,\n"
 			"\t\t.elem_size = sizeof(struct %1$s_%2$s),\n"
 			"\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
-			"\t\t.ei_array = %1$s_%4$s_ei,\n"
+			"\t\t.ei_array = &%1$s_%4$s_ei,\n"
 			"\t},\n",
 			package, qs->name, qsm->name, qsm->qmi_struct->name);
 	}
@@ -328,7 +328,18 @@ static void emit_native_ei(FILE *fp, const char *package, struct qmi_message *qm
 				package, qm->name, qmm->name, qmm->id, qmm->array_size,
 				sz_native_types[qmm->type]);
 	} else if (qmm->array_size) {
-		fprintf(fp, "\t{\n"
+		if (qmm->array_len_type >= 0)
+			fprintf(fp, "\t{\n"
+				"\t\t.data_type = QMI_DATA_LEN,\n"
+				"\t\t.elem_len = 1,\n"
+				"\t\t.elem_size = sizeof(%5$s),\n"
+				"\t\t.tlv_type = %4$d,\n"
+				"\t\t.offset = offsetof(struct %1$s_%2$s, %3$s_len),\n"
+				"\t},\n",
+				package, qm->name, qmm->name, qmm->id,
+				sz_native_types[qmm->array_len_type]);
+		else
+			fprintf(fp, "\t{\n"
 				"\t\t.data_type = QMI_DATA_LEN,\n"
 				"\t\t.elem_len = 1,\n"
 				"\t\t.elem_size = sizeof(%5$s),\n"
@@ -391,7 +402,18 @@ static void emit_struct_ref_ei(FILE *fp, const char *package, struct qmi_message
 	}
 
 	if (qmm->array_size) {
-		fprintf(fp, "\t{\n"
+		if (qmm->array_len_type >= 0)
+			fprintf(fp, "\t{\n"
+				"\t\t.data_type = QMI_DATA_LEN,\n"
+				"\t\t.elem_len = 1,\n"
+				"\t\t.elem_size = sizeof(%5$s),\n"
+				"\t\t.tlv_type = %4$d,\n"
+				"\t\t.offset = offsetof(struct %1$s_%2$s, %3$s_len),\n"
+				"\t},\n",
+				package, qm->name, qmm->name, qmm->id,
+				sz_native_types[qmm->array_len_type]);
+		else
+			fprintf(fp, "\t{\n"
 				"\t\t.data_type = QMI_DATA_LEN,\n"
 				"\t\t.elem_len = 1,\n"
 				"\t\t.elem_size = sizeof(%5$s),\n"
