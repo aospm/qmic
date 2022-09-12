@@ -571,12 +571,10 @@ static inline void qmi_struct_parse_array_len_size(struct qmi_struct_member *qsm
 {
 	struct token array_len_size;
 
-	qsm->array_len_type = TYPE_U8;
-
-	if (token_accept('(', NULL)) {
-		if (!qsm->is_ptr)
-			yyerror("Variable arrays must be pointer types");
-
+	if (qsm->is_ptr) {
+		if (!token_accept('(', NULL))
+			yyerror("Variable length arrays must define the length type, "
+				"e.g. u8 *my_data(u16);");
 		token_expect(TOK_TYPE, &array_len_size);
 		if (array_len_size.qmi_struct)
 			yyerror("Can't use struct type as array length");
