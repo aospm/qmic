@@ -362,6 +362,9 @@ static void token_init(void)
 
 static bool token_accept(enum token_id token_id, struct token *tok)
 {
+	// printf("have: %s / %d:%c / %d, want: %d:%c\n",
+	// 	curr_token.str, curr_token.id, curr_token.id,
+	// 	curr_token.num, token_id, token_id);
 	if (curr_token.id != token_id)
 		return false;
 
@@ -741,6 +744,11 @@ void qmi_parse(void)
 	symbol_add("u16", TOK_TYPE, TYPE_U16);
 	symbol_add("u32", TOK_TYPE, TYPE_U32);
 	symbol_add("u64", TOK_TYPE, TYPE_U64);
+	symbol_add("i8", TOK_TYPE, TYPE_I8);
+	symbol_add("i16", TOK_TYPE, TYPE_I16);
+	symbol_add("i32", TOK_TYPE, TYPE_I32);
+	symbol_add("i64", TOK_TYPE, TYPE_I64);
+	symbol_add("char", TOK_TYPE, TYPE_CHAR);
 
 	symbol_add(qmi_response_type_v01.name, TOK_TYPE, TYPE_STRUCT, &qmi_response_type_v01);
 

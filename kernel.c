@@ -11,13 +11,23 @@ static const char *sz_native_types[] = {
 	[TYPE_U16] = "uint16_t",
 	[TYPE_U32] = "uint32_t",
 	[TYPE_U64] = "uint64_t",
+	[TYPE_I8] = "int8_t",
+	[TYPE_I16] = "int16_t",
+	[TYPE_I32] = "int32_t",
+	[TYPE_I64] = "int64_t",
+	[TYPE_CHAR] = "char",
 };
 
 static const char *sz_data_types[] = {
 	[TYPE_U8] = "QMI_UNSIGNED_1_BYTE",
 	[TYPE_U16] = "QMI_UNSIGNED_2_BYTE",
 	[TYPE_U32] = "QMI_UNSIGNED_4_BYTE",
-	[TYPE_U64] = "QMI_UNSIGNED_8_BYTE"
+	[TYPE_U64] = "QMI_UNSIGNED_8_BYTE",
+	[TYPE_I8] = "QMI_SIGNED_1_BYTE",
+	[TYPE_I16] = "QMI_SIGNED_2_BYTE",
+	[TYPE_I32] = "QMI_SIGNED_4_BYTE",
+	[TYPE_I64] = "QMI_SIGNED_8_BYTE",
+	[TYPE_CHAR] = "QMI_SIGNED_1_BYTE",
 };
 
 static void emit_struct_definition(FILE *fp, const char *package,
@@ -38,7 +48,16 @@ static void emit_struct_definition(FILE *fp, const char *package,
 		case TYPE_U16:
 		case TYPE_U32:
 		case TYPE_U64:
-			fprintf(fp, "\t%s %s;\n", sz_native_types[qsm->type], qsm->name);
+		case TYPE_I8:
+		case TYPE_I16:
+		case TYPE_I32:
+		case TYPE_I64:
+		case TYPE_CHAR:
+			fprintf(fp, "\t%s %s%s", sz_native_types[qsm->type],
+				qsm->is_ptr ? "*" : "", qsm->name);
+			if (qsm->array_fixed)
+				fprintf(fp, "[%d]", qsm->array_size);
+			fprintf(fp, ";\n");
 			break;
 		case TYPE_STRING:
 			fprintf(fp, "\tuint32_t %s_len;\n", qsm->name);
@@ -128,6 +147,11 @@ static void emit_struct_ei(FILE *fp, const char *package, struct qmi_struct *qs)
 		case TYPE_U16:
 		case TYPE_U32:
 		case TYPE_U64:
+		case TYPE_I8:
+		case TYPE_I16:
+		case TYPE_I32:
+		case TYPE_I64:
+		case TYPE_CHAR:
 			emit_struct_native_ei(fp, package, qs, qsm);
 			break;
 		case TYPE_STRING:
@@ -153,22 +177,15 @@ static void emit_struct_ei(FILE *fp, const char *package, struct qmi_struct *qs)
 static void emit_native_type(FILE *fp, const char *package, struct qmi_message *qm,
 			    struct qmi_message_member *qmm)
 {
-	static const char *sz_types[] = {
-		[TYPE_U8] = "uint8_t",
-		[TYPE_U16] = "uint16_t",
-		[TYPE_U32] = "uint32_t",
-		[TYPE_U64] = "uint64_t",
-	};
-
 	if (!qmm->required)
 		fprintf(fp, "\tbool %s_valid;\n", qmm->name);
 
 	if (qmm->array_size) {
 		fprintf(fp, "\tuint32_t %s_len;\n", qmm->name);
-		fprintf(fp, "\t%s %s[%d];\n", sz_types[qmm->type],
+		fprintf(fp, "\t%s %s[%d];\n", sz_native_types[qmm->type],
 			qmm->name, qmm->array_size);
 	} else {
-		fprintf(fp, "\t%s %s;\n", sz_types[qmm->type],
+		fprintf(fp, "\t%s %s;\n", sz_native_types[qmm->type],
 			qmm->name);
 	}
 }
@@ -203,6 +220,11 @@ static void emit_msg_struct(FILE *fp, const char *package, struct qmi_message *q
 		case TYPE_U16:
 		case TYPE_U32:
 		case TYPE_U64:
+		case TYPE_I8:
+		case TYPE_I16:
+		case TYPE_I32:
+		case TYPE_I64:
+		case TYPE_CHAR:
 			emit_native_type(fp, package, qm, qmm);
 			break;
 		case TYPE_STRING:
@@ -255,6 +277,11 @@ static void emit_msg_initialiser(FILE *fp, const char *package,
 		case TYPE_U16:
 		case TYPE_U32:
 		case TYPE_U64:
+		case TYPE_I8:
+		case TYPE_I16:
+		case TYPE_I32:
+		case TYPE_I64:
+		case TYPE_CHAR:
 			fprintf(fp, ", 0");
 			break;
 		case TYPE_STRING:
@@ -397,6 +424,11 @@ static void emit_elem_info_array(FILE *fp, const char *package, struct qmi_messa
 		case TYPE_U16:
 		case TYPE_U32:
 		case TYPE_U64:
+		case TYPE_I8:
+		case TYPE_I16:
+		case TYPE_I32:
+		case TYPE_I64:
+		case TYPE_CHAR:
 			emit_native_ei(fp, package, qm, qmm);
 			break;
 		case TYPE_STRUCT:

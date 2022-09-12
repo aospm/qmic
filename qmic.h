@@ -15,8 +15,13 @@ enum symbol_type {
 	TYPE_U16,
 	TYPE_U32,
 	TYPE_U64,
+	TYPE_I8,
+	TYPE_I16,
+	TYPE_I32,
+	TYPE_I64,
+	TYPE_CHAR,
 	TYPE_STRING,
-	TYPE_STRUCT
+	TYPE_STRUCT,
 };
 
 enum message_type {
