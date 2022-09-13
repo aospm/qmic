@@ -219,6 +219,7 @@ static void emit_msg_struct(FILE *fp, const char *package, struct qmi_message *q
 	fprintf(fp, "struct %1$s_%2$s {\n", package, qm->name);
 	fprintf(fp, "\tstruct qmi_header qmi_header;\n");
 	fprintf(fp, "\tstruct qmi_elem_info **ei;\n");
+	fprintf(fp, "\tconst char *name;\n");
 
 	list_for_each_entry(qmm, &qm->members, node) {
 		switch (qmm->type) {
@@ -274,7 +275,7 @@ static void emit_msg_initialiser(FILE *fp, const char *package,
 		p++;
 	}
 
-	fprintf(fp, "#define %s { { %d, 0, 0x%04x, 0 }, &%s_%s_ei", upper,
+	fprintf(fp, "#define %1$s { { %2$d, 0, 0x%3$04x, 0 }, &%4$s_%5$s_ei, \"%5$s\"", upper,
 		qm->type, qm->msg_id, package, qm->name);
 
 	list_for_each_entry(qmm, &qm->members, node) {
