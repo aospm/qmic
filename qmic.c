@@ -32,7 +32,26 @@ void qmi_const_header(FILE *fp)
 		return;
 
 	list_for_each_entry(qc, &qmi_consts, node)
-		fprintf(fp, "#define %s %llu\n", qc->name, qc->value);
+		fprintf(fp, "#define %s %lld\n", qc->name, qc->value);
+
+	fprintf(fp, "\n");
+}
+
+void qmi_enum_header(FILE *fp)
+{
+	struct qmi_enum *qe;
+	struct qmi_const *qc;
+
+	if (list_empty(&qmi_enums))
+		return;
+
+	list_for_each_entry(qe, &qmi_enums, node) {
+		fprintf(fp, "enum %s {\n", qe->name);
+		list_for_each_entry(qc, &qe->members, node) {
+			fprintf(fp, "\t%s = %lld,\n", qc->name, qc->value);
+		}
+		fprintf(fp, "};\n\n");
+	}
 
 	fprintf(fp, "\n");
 }

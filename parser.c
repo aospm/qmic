@@ -24,6 +24,7 @@ const char *qmi_package;
 struct list_head qmi_consts = LIST_INIT(qmi_consts);
 struct list_head qmi_messages = LIST_INIT(qmi_messages);
 struct list_head qmi_structs = LIST_INIT(qmi_structs);
+struct list_head qmi_enums = LIST_INIT(qmi_enums);
 
 enum token_id {
 	/* Also any non-NUL (7-bit) ASCII character */
@@ -34,6 +35,7 @@ enum token_id {
 	TOK_VALUE,
 	TOK_PACKAGE,
 	TOK_STRUCT,
+	TOK_ENUM,
 	TOK_TYPE,
 	TOK_REQUIRED,
 	TOK_OPTIONAL,
@@ -101,6 +103,8 @@ struct symbol {
 			enum symbol_type symbol_type;
 			/* TYPE_STRUCT also has a struct pointer */
 			struct qmi_struct *qmi_struct;
+			/* TYPE_ENUM has a struct pointer too */
+			struct qmi_enum *qmi_enum;
 		};
 		unsigned long long value;		/* TOK_VALUE */
 	};
@@ -405,7 +409,7 @@ static void qmi_package_parse(void)
 	qmi_package = tok.str;
 }
 
-static void qmi_const_parse()
+static void qmi_const_parse(struct list_head *target_list)
 {
 	struct qmi_const *qcm;
 	struct qmi_const *qc;
@@ -425,7 +429,7 @@ static void qmi_const_parse()
 	qc->name = id_tok.str;
 	qc->value = num_tok.num;
 
-	list_add(&qmi_consts, &qc->node);
+	list_add(target_list, &qc->node);
 
 	symbol_add(qc->name, TOK_VALUE, qc->value);
 }
@@ -720,6 +724,24 @@ static void qmi_struct_parse(void)
 	qmi_struct_gen_names(qs, memalloc(1024));
 }
 
+static void qmi_enum_parse(void)
+{
+	struct token id_tok;
+	struct qmi_enum *qe = memalloc(sizeof(struct qmi_enum));
+	list_init(&qe->members);
+
+	token_expect(TOK_ID, &id_tok);
+	token_expect('{', NULL);
+	while (!token_accept('}', NULL))
+		qmi_const_parse(&qe->members);
+	token_expect(';', NULL);
+
+	qe->name = id_tok.str;
+	
+	list_add(&qmi_enums, &qe->node);
+	symbol_add(qe->name, TOK_ENUM, TYPE_ENUM, qe);
+}
+
 struct qmi_struct qmi_response_type_v01 = {
 	.name = "qmi_response_type_v01",
 	.members = LIST_INIT(qmi_response_type_v01.members),
@@ -745,6 +767,7 @@ void qmi_parse(void)
 	symbol_add("package", TOK_PACKAGE);
 	symbol_add("required", TOK_REQUIRED);
 	symbol_add("struct", TOK_STRUCT);
+	symbol_add("enum", TOK_ENUM);
 	symbol_add("string", TOK_TYPE, TYPE_STRING);
 	symbol_add("u8", TOK_TYPE, TYPE_U8);
 	symbol_add("u16", TOK_TYPE, TYPE_U16);
@@ -763,9 +786,11 @@ void qmi_parse(void)
 		if (token_accept(TOK_PACKAGE, NULL)) {
 			qmi_package_parse();
 		} else if (token_accept(TOK_CONST, NULL)) {
-			qmi_const_parse();
+			qmi_const_parse(&qmi_consts);
 		} else if (token_accept(TOK_STRUCT, NULL)) {
 			qmi_struct_parse();
+		} else if (token_accept(TOK_ENUM, NULL)) {
+			qmi_enum_parse();
 		} else if (token_accept(TOK_MESSAGE, &tok)) {
 			qmi_message_parse(tok.num);
 			free(tok.str);

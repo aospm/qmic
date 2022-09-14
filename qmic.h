@@ -22,6 +22,7 @@ enum symbol_type {
 	TYPE_CHAR,
 	TYPE_STRING,
 	TYPE_STRUCT,
+	TYPE_ENUM,
 };
 
 enum message_type {
@@ -36,7 +37,7 @@ extern const char *qmi_package;
 
 struct qmi_const {
 	const char *name;
-	unsigned long long value;
+	long long value;
 
 	struct list_head node;
 };
@@ -100,9 +101,17 @@ struct qmi_struct {
 	struct list_head members;
 };
 
+struct qmi_enum {
+	char *name;
+
+	struct list_head node;
+	struct list_head members;
+};
+
 extern struct list_head qmi_consts;
 extern struct list_head qmi_messages;
 extern struct list_head qmi_structs;
+extern struct list_head qmi_enums;
 extern FILE *sourcefile;
 
 void qmi_parse(void);
@@ -111,6 +120,7 @@ void emit_source_includes(FILE *fp, const char *package);
 void guard_header(FILE *fp, const char *package);
 void guard_footer(FILE *fp);
 void qmi_const_header(FILE *fp);
+void qmi_enum_header(FILE *fp);
 
 void accessor_emit_c(FILE *fp, const char *package);
 void accessor_emit_h(FILE *fp, const char *package);

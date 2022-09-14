@@ -530,6 +530,7 @@ void kernel_emit_h(FILE *fp, const char *package)
 	fprintf(fp, "\n");
 
 	qmi_const_header(fp);
+	qmi_enum_header(fp);
 
 	list_for_each_entry(qs, &qmi_structs, node)
 		emit_struct_definition(fp, package, qs);
