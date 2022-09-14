@@ -182,11 +182,11 @@ static void emit_native_type(FILE *fp, const char *package, struct qmi_message *
 
 	if (qmm->array_size) {
 		fprintf(fp, "\tuint32_t %s_len;\n", qmm->name);
-		fprintf(fp, "\t%s %s[%d];\n", sz_native_types[qmm->type],
-			qmm->name, qmm->array_size);
+		fprintf(fp, "\t%s %s[%d];  // 0x%02x\n", sz_native_types[qmm->type],
+			qmm->name, qmm->array_size, qmm->id);
 	} else {
-		fprintf(fp, "\t%s %s;\n", sz_native_types[qmm->type],
-			qmm->name);
+		fprintf(fp, "\t%s %s;  // 0x%02x\n", sz_native_types[qmm->type],
+			qmm->name, qmm->id);
 	}
 }
 
@@ -196,7 +196,7 @@ static void emit_struct_type(FILE *fp, const char *package, struct qmi_message *
 	struct qmi_struct *qs = qmm->qmi_struct;
 
 	if (!strcmp(qs->name, "qmi_response_type_v01")) {
-		fprintf(fp, "\tstruct %s %s;\n", qs->name, qmm->name);
+		fprintf(fp, "\tstruct %s %s;  // 0x%02x\n", qs->name, qmm->name, qmm->id);
 		return;
 	}
 
@@ -205,10 +205,11 @@ static void emit_struct_type(FILE *fp, const char *package, struct qmi_message *
 
 	if (qmm->array_size) {
 		fprintf(fp, "\tuint32_t %s_len;\n", qmm->name);
-		fprintf(fp, "\tstruct %s_%s %s[%d];\n", package, qs->name,
-			qmm->name, qmm->array_size);
+		fprintf(fp, "\tstruct %s_%s %s[%d];  // 0x%02x\n", package, qs->name,
+			qmm->name, qmm->array_size, qmm->id);
 	} else {
-		fprintf(fp, "\tstruct %s_%s %s;\n", package, qs->name, qmm->name);
+		fprintf(fp, "\tstruct %s_%s %s;  // 0x%02x\n", package, qs->name, qmm->name,
+			qmm->id);
 	}
 }
 
@@ -216,10 +217,11 @@ static void emit_msg_struct(FILE *fp, const char *package, struct qmi_message *q
 {
 	struct qmi_message_member *qmm;
 
-	fprintf(fp, "struct %1$s_%2$s {\n", package, qm->name);
+	fprintf(fp, "struct %1$s_%2$s { // 0x%3$04x\n", package, qm->name, qm->msg_id);
 	fprintf(fp, "\tstruct qmi_header qmi_header;\n");
 	fprintf(fp, "\tstruct qmi_elem_info **ei;\n");
 	fprintf(fp, "\tconst char *name;\n");
+	fprintf(fp, "\t/* Below are message TLVs */\n");
 
 	list_for_each_entry(qmm, &qm->members, node) {
 		switch (qmm->type) {
@@ -236,7 +238,7 @@ static void emit_msg_struct(FILE *fp, const char *package, struct qmi_message *q
 			break;
 		case TYPE_STRING:
 			fprintf(fp, "\tuint32_t %s_len;\n", qmm->name);
-			fprintf(fp, "\tchar %s[256];\n", qmm->name);
+			fprintf(fp, "\tchar %s[256]; // 0x%02x\n", qmm->name, qmm->id);
 			break;
 		case TYPE_STRUCT:
 			emit_struct_type(fp, package, qm, qmm);
