@@ -366,10 +366,10 @@ void accessor_emit_c(FILE *fp, const char *package)
 	
 void accessor_emit_h(FILE *fp, const char *package)
 {
-	guard_header(fp, qmi_package);
+	guard_header(fp, qmi_package.name);
 	emit_header_file_header(fp);
 	qmi_const_header(fp);
-	qmi_struct_header(fp, qmi_package);
-	qmi_message_header(fp, qmi_package);
+	qmi_struct_header(fp, qmi_package.name);
+	qmi_message_header(fp, qmi_package.name);
 	guard_footer(fp);
 }

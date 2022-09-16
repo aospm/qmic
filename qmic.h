@@ -33,7 +33,12 @@ enum message_type {
 
 extern const char *sz_simple_types[];
 
-extern const char *qmi_package;
+struct qmi_package {
+	const char *name;
+	unsigned short service_id;
+};
+
+extern struct qmi_package qmi_package;
 
 struct qmi_const {
 	const char *name;
@@ -125,8 +130,8 @@ void qmi_enum_header(FILE *fp);
 void accessor_emit_c(FILE *fp, const char *package);
 void accessor_emit_h(FILE *fp, const char *package);
 
-void kernel_emit_c(FILE *fp, const char *package);
-void kernel_emit_h(FILE *fp, const char *package);
+void kernel_emit_c(FILE *fp);
+void kernel_emit_h(FILE *fp);
 
 /* Allocate and zero a block of memory; and exit if it fails */
 #define memalloc(size) ({						\

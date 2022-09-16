@@ -19,7 +19,7 @@
 #define TOKEN_BUF_SIZE		128	/* TOKEN_BUF_MIN or more */
 #define TOKEN_BUF_MIN		24	/* Enough for a 64-bit octal number */
 
-const char *qmi_package;
+struct qmi_package qmi_package;
 
 struct list_head qmi_consts = LIST_INIT(qmi_consts);
 struct list_head qmi_messages = LIST_INIT(qmi_messages);
@@ -400,13 +400,16 @@ static void token_expect(enum token_id token_id, struct token *tok)
 static void qmi_package_parse(void)
 {
 	struct token tok;
+	struct token service_id;
 
 	token_expect(TOK_ID, &tok);
+	if (token_accept(TOK_NUM, &service_id))
+		qmi_package.service_id = service_id.num;
 	token_expect(';', NULL);
 
-	if (qmi_package)
+	if (qmi_package.name)
 		yyerror("package may only be specified once");
-	qmi_package = tok.str;
+	qmi_package.name = tok.str;
 }
 
 static void qmi_const_parse(struct list_head *target_list)
@@ -751,7 +754,7 @@ void qmi_parse(void)
 {
 	struct token tok;
 
-	/* PACKAGE ID<string> ';' */
+	/* PACKAGE ID<string> [QMI_SERVICE<string>] ';' */
 	/* CONST ID<string> '=' NUM<num> ';' */
 	/* STRUCT ID<string> '{' ... '}' ';' */
 		/* TYPE<type*> ID<string> ';' */
@@ -801,6 +804,6 @@ void qmi_parse(void)
 	}
 
 	/* The package name must have been specified */
-	if (!qmi_package)
+	if (!qmi_package.name)
 		yyerror("package not specified");
 }
