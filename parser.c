@@ -484,7 +484,7 @@ static void qmi_message_parse(enum message_type message_type)
 				if (num_tok.num > TYPE_CHAR)
 					yyerror("Array size type must be a basic type");
 				array_len_type = num_tok.num;
-				array_size = 1;
+				array_size = 255;
 			}
 			token_expect(')', NULL);
 			array_fixed = false;

@@ -53,8 +53,11 @@ static void emit_struct_definition(FILE *fp,
 		case TYPE_I32:
 		case TYPE_I64:
 		case TYPE_CHAR:
+			// FIXME: rock and a hard place here, we libqrtr needs
+			// to be extended to support allocating memory for variable
+			// arrays
 			fprintf(fp, "\t%s %s%s", sz_native_types[qsm->type],
-				qsm->is_ptr ? "*" : "", qsm->name);
+				qsm->name, qsm->is_ptr ? "[64]" : "");
 			if (qsm->array_fixed)
 				fprintf(fp, "[%d]", qsm->array_size);
 			fprintf(fp, ";\n");
@@ -65,7 +68,7 @@ static void emit_struct_definition(FILE *fp,
 			break;
 		case TYPE_STRUCT:
 			fprintf(fp, "\tstruct %s_%s %s%s;\n", qmi_package.name, qsm->qmi_struct->name,
-				qsm->is_ptr ? "*" : "", qsm->name);
+				qsm->name, qsm->is_ptr ? "[64]" : "");
 			break;
 		}
 	}
