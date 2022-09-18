@@ -279,8 +279,9 @@ static void emit_msg_initialiser(FILE *fp,
 	}
 
 	fprintf(fp, "#define %1$s { { { %2$d, 0, 0x%3$04x, 0 }, &%4$s_%5$s_ei, \\\n"
-		    "	0x%6$02x, \"%5$s\" }", upper,
-		qm->type, qm->msg_id, qmi_package.name, qm->name, qmi_package.service_id);
+		    "	0x%6$02x, \"%5$s\", NULL }",
+		upper, qm->type, qm->msg_id, qmi_package.name,
+		qm->name, qmi_package.service_id);
 
 	list_for_each_entry(qmm, &qm->members, node) {
 		switch (qmm->type) {
