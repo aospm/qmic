@@ -270,7 +270,7 @@ static void emit_msg_initialiser(FILE *fp,
 		    "	ptr->hdr.qmi_header->msg_id = 0x%5$04x; \\\n"
 		    "	ptr->hdr.ei = &%2$s_%3$s_ei; \\\n"
 		    "	ptr->hdr.service = 0x%6$02x; \\\n"
-		    "	ptr->hdr.name = \"%3$s\"; ptr })\n",
+		    "	ptr->hdr.name = \"%3$s\"; ptr; })\n",
 		upper, qmi_package.name, qm->name, qm->type, qm->msg_id,
 		qmi_package.service_id);
 
