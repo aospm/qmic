@@ -114,7 +114,7 @@ static void emit_struct_nested_ei(FILE *fp,
 			"\t\t.array_type = VAR_LEN_ARRAY,\n"
 			"\t\t.elem_size = sizeof(struct %1$s_%2$s),\n"
 			"\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
-			"\t\t.ei_array = &%1$s_%4$s_ei,\n"
+			"\t\t.ei_array = %1$s_%4$s_ei,\n"
 			"\t},\n",
 			qmi_package.name, qs->name, qsm->name, qsm->qmi_struct->name);
 	} else {
@@ -123,7 +123,7 @@ static void emit_struct_nested_ei(FILE *fp,
 			"\t\t.elem_len = 1,\n"
 			"\t\t.elem_size = sizeof(struct %1$s_%2$s),\n"
 			"\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
-			"\t\t.ei_array = &%1$s_%4$s_ei,\n"
+			"\t\t.ei_array = %1$s_%4$s_ei,\n"
 			"\t},\n",
 			qmi_package.name, qs->name, qsm->name, qsm->qmi_struct->name);
 	}
@@ -268,7 +268,7 @@ static void emit_msg_initialiser(FILE *fp,
 		    "	struct %2$s_%3$s *ptr = malloc(sizeof(struct %2$s_%3$s)); \\\n"
 		    "	ptr->hdr.qmi_header->type = %4$d; \\\n"
 		    "	ptr->hdr.qmi_header->msg_id = 0x%5$04x; \\\n"
-		    "	ptr->hdr.ei = &%2$s_%3$s_ei; \\\n"
+		    "	ptr->hdr.ei = %2$s_%3$s_ei; \\\n"
 		    "	ptr->hdr.service = 0x%6$02x; \\\n"
 		    "	ptr->hdr.name = \"%3$s\"; ptr; })\n",
 		upper, qmi_package.name, qm->name, qm->type, qm->msg_id,
@@ -281,34 +281,35 @@ static void emit_msg_initialiser(FILE *fp,
 		p++;
 	}
 
-	fprintf(fp, "#define %1$s { { { %2$d, 0, 0x%3$04x, 0 }, &%4$s_%5$s_ei, \\\n"
-		    "	0x%6$02x, \"%5$s\", NULL }",
+	fprintf(fp, "#define %1$s { .hdr = { .qmi_header = { %2$d, 0, 0x%3$04x, 0 },\\\n"
+		    "	.ei = %4$s_%5$s_ei, \\\n"
+		    "	.service = 0x%6$02x, .name = \"%5$s\" } }\n",
 		upper, qm->type, qm->msg_id, qmi_package.name,
 		qm->name, qmi_package.service_id);
 
-	list_for_each_entry(qmm, &qm->members, node) {
-		switch (qmm->type) {
-		case TYPE_U8:
-		case TYPE_U16:
-		case TYPE_U32:
-		case TYPE_U64:
-		case TYPE_I8:
-		case TYPE_I16:
-		case TYPE_I32:
-		case TYPE_I64:
-		case TYPE_CHAR:
-			fprintf(fp, ", 0");
-			break;
-		case TYPE_STRING:
-			fprintf(fp, ", 0, NULL");
-			break;
-		case TYPE_STRUCT:
-			fprintf(fp, ", {}");
-			break;
-		}
-	}
+	// list_for_each_entry(qmm, &qm->members, node) {
+	// 	switch (qmm->type) {
+	// 	case TYPE_U8:
+	// 	case TYPE_U16:
+	// 	case TYPE_U32:
+	// 	case TYPE_U64:
+	// 	case TYPE_I8:
+	// 	case TYPE_I16:
+	// 	case TYPE_I32:
+	// 	case TYPE_I64:
+	// 	case TYPE_CHAR:
+	// 		fprintf(fp, ", 0");
+	// 		break;
+	// 	case TYPE_STRING:
+	// 		fprintf(fp, ", 0, NULL");
+	// 		break;
+	// 	case TYPE_STRUCT:
+	// 		fprintf(fp, ", {}");
+	// 		break;
+	// 	}
+	// }
 
-	fprintf(fp, " }\n");
+	// fprintf(fp, " }\n");
 }
 
 static void emit_native_ei(FILE *fp, struct qmi_message *qm,
