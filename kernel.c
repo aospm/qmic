@@ -278,8 +278,8 @@ static void emit_msg_initialiser(FILE *fp,
 
 	fprintf(fp, "#define %1$s ({ \\\n"
 		    "	struct %2$s_%3$s *ptr = malloc(sizeof(struct %2$s_%3$s)); \\\n"
-		    "	ptr->hdr.qmi_header->type = %4$d; \\\n"
-		    "	ptr->hdr.qmi_header->msg_id = 0x%5$04x; \\\n"
+		    "	ptr->hdr.qmi_header.type = %4$d; \\\n"
+		    "	ptr->hdr.qmi_header.msg_id = 0x%5$04x; \\\n"
 		    "	ptr->hdr.ei = %2$s_%3$s_ei; \\\n"
 		    "	ptr->hdr.service = 0x%6$02x; \\\n"
 		    "	ptr->hdr.name = \"%3$s\"; ptr; })\n",
