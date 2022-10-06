@@ -56,9 +56,9 @@ static void emit_struct_definition(FILE *fp,
 			// FIXME: rock and a hard place here, we libqrtr needs
 			// to be extended to support allocating memory for variable
 			// arrays
-			fprintf(fp, "\t%s %s%s", sz_native_types[qsm->type],
-				qsm->name, qsm->is_ptr ? "[64]" : "");
-			if (qsm->array_fixed)
+			fprintf(fp, "\t%s %s", sz_native_types[qsm->type],
+				qsm->name);
+			if (qsm->array_fixed || qsm->is_ptr)
 				fprintf(fp, "[%d]", qsm->array_size);
 			fprintf(fp, ";\n");
 			break;
@@ -86,6 +86,17 @@ static void emit_struct_native_ei(FILE *fp,
 			    "\t\t.data_type = %4$s,\n"
 			    "\t\t.elem_len = %6$d,\n"
 			    "\t\t.array_type = STATIC_ARRAY,\n"
+			    "\t\t.elem_size = sizeof(%5$s),\n"
+			    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
+			    "\t},\n",
+			    qmi_package.name, qs->name, qsm->name,
+			    sz_data_types[qsm->type], sz_native_types[qsm->type],
+			    qsm->array_size);
+	else if (qsm->is_ptr)
+		fprintf(fp, "\t{\n"
+			    "\t\t.data_type = %4$s,\n"
+			    "\t\t.elem_len = %6$d,\n"
+			    "\t\t.array_type = VAR_LEN_ARRAY,\n"
 			    "\t\t.elem_size = sizeof(%5$s),\n"
 			    "\t\t.offset = offsetof(struct %1$s_%2$s, %3$s),\n"
 			    "\t},\n",

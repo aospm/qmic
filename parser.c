@@ -682,8 +682,10 @@ static void qmi_struct_parse(void)
 
 			if (nest) {
 				qsm = qs->member;
-				if (token_accept('*', NULL))
+				if (token_accept('*', NULL)) {
 					qsm->is_ptr = true;
+					qsm->array_size = 64;
+				}
 				token_expect(TOK_ID, &id_tok);
 				qsm->name = id_tok.str;
 				qsm->type = TYPE_STRUCT;
@@ -704,8 +706,10 @@ static void qmi_struct_parse(void)
 			continue;
 		}
 
-		if (token_accept('*', NULL))
+		if (token_accept('*', NULL)){
 			qsm->is_ptr = true;
+			qsm->array_size = 64;
+		}
 		token_expect(TOK_ID, &id_tok);
 		qmi_struct_parse_array_len_size(qsm);
 		token_expect(';', NULL);
