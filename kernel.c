@@ -58,19 +58,20 @@ static void emit_struct_definition(FILE *fp,
 			// arrays
 			fprintf(fp, "\t%s %s", sz_native_types[qsm->type],
 				qsm->name);
-			if (qsm->array_fixed || qsm->is_ptr)
-				fprintf(fp, "[%d]", qsm->array_size);
-			fprintf(fp, ";\n");
 			break;
 		case TYPE_STRING:
 			fprintf(fp, "\tuint32_t %s_len;\n", qsm->name);
-			fprintf(fp, "\tchar %s[256];\n", qsm->name);
+			fprintf(fp, "\tchar %s", qsm->name);
 			break;
 		case TYPE_STRUCT:
-			fprintf(fp, "\tstruct %s_%s %s%s;\n", qmi_package.name, qsm->qmi_struct->name,
-				qsm->name, qsm->is_ptr ? "[64]" : "");
+			fprintf(fp, "\tstruct %s_%s %s",
+				qmi_package.name, qsm->qmi_struct->name,
+				qsm->name);
 			break;
 		}
+		if (qsm->array_fixed || qsm->is_ptr || qsm->type == TYPE_STRING)
+				fprintf(fp, "[%d]", qsm->array_size);
+			fprintf(fp, ";\n");
 	}
 
 	fprintf(fp, "};\n");
