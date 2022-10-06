@@ -584,6 +584,16 @@ static void qmi_struct_gen_names(struct qmi_struct *qs, char *_namebuf)
  * 	u16 raw_data_len;
  * 	u8 raw_data[];
  * };
+ * 
+ * To support allocating larger QMI messages on the stack, dynamic arrays (pointer types) can
+ * set the maximum expected size. The following example defines a dynamic array of u8 values
+ * where the array length is also a u8 and the array will not be longer than 32:
+ * 
+ * struct card_status_application {
+ *   ...
+ *   u8 *application_identifier_value(u8)[32]
+ *   ...
+ * };
  */
 static inline void qmi_struct_parse_array_len_size(struct qmi_struct_member *qsm)
 {
@@ -598,6 +608,13 @@ static inline void qmi_struct_parse_array_len_size(struct qmi_struct_member *qsm
 			yyerror("Array size type must be a basic type");
 		token_expect(')', NULL);
 		qsm->array_len_type = array_len_size.num;
+
+		// Array max size
+		if (token_accept('[', NULL)) {
+			token_expect(TOK_NUM, &array_len_size);
+			token_expect(']', NULL);
+			qsm->array_size = array_len_size.num;
+		}
 	} else if (token_accept('[', NULL)) {
 		if (qsm->is_ptr)
 			yyerror("Fixed arrays can't be pointers");
